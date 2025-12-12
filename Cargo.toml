@@ -1,0 +1,28 @@
+[package]
+name = "git-ranger"
+version = "0.1.0"
+edition = "2021"
+authors = ["Paul W"]
+description = "A command line tool that manages and synchronizes local Git repositories across multiple providers"
+license = "MIT"
+
+[lib]
+name = "git_ranger"
+path = "src/lib.rs"
+
+[[bin]]
+name = "git-ranger"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.4", features = ["derive"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_yaml = "0.9"
+anyhow = "1.0"
+thiserror = "1.0"
+
+[dev-dependencies]
+tempfile = "3.8"
+assert_fs = "1.0"
+predicates = "3.0"
+serial_test = "3.0"

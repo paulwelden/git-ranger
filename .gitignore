@@ -1,0 +1,80 @@
+# Rust
+target/
+Cargo.lock
+**/*.rs.bk
+*.pdb
+*.rlib
+
+# Debug build artifacts
+debug/
+**/*.dSYM/
+
+# Profiling and benchmarking
+perf.data
+perf.data.old
+flamegraph.svg
+*.profdata
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.iml
+.project
+.classpath
+.settings/
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Test artifacts
+test-init/
+ranger.yaml
+*.test
+tests/fixtures/temp/
+tmp/
+
+# Build artifacts
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+
+# Rust-specific
+*.rmeta
+*.orig
+.cargo/
+!.cargo/config.toml
+
+# Documentation
+/doc/
+/book/
+
+# Environment and configuration
+.env
+.env.local
+.env.*.local
+*.log
+*.tmp
+
+# Coverage
+*.profraw
+coverage/
+lcov.info
+tarpaulin-report.html
+
+# Dependency directories
+/vendor/
+
+# Backup files
+*.bak
+*.backup
+*~

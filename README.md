@@ -26,7 +26,9 @@ Modern development teams work across many repos and sometimes multiple hosting p
 providers:
   gitlab:
     host: "https://gitlab.example.com"
-    token: "YOUR_TOKEN"
+    token: "${GITLAB_TOKEN}"  # Reads from environment variable
+  github:
+    token: "${GITHUB_TOKEN}"  # Reads from environment variable
    
 groups:
   gitlab:
@@ -39,6 +41,46 @@ repos:
   - url: "git@github.com:my-org/standalone-tool.git"
     local_dir: "standalone"
 ```
+
+### Security: Protecting Your Tokens
+
+**Git Ranger uses environment variables to keep tokens secure.** Never commit tokens directly to `ranger.yaml`!
+
+**Setting up environment variables:**
+
+**Windows (PowerShell):**
+```powershell
+# Set for current session
+$env:GITLAB_TOKEN = "your-gitlab-token"
+$env:GITHUB_TOKEN = "your-github-token"
+
+# Persist across sessions - add to PowerShell profile
+notepad $PROFILE
+# Add the lines above to the profile file
+```
+
+**Linux/macOS (bash/zsh):**
+```bash
+# Set for current session
+export GITLAB_TOKEN="your-gitlab-token"
+export GITHUB_TOKEN="your-github-token"
+
+# Persist across sessions - add to shell profile
+echo 'export GITLAB_TOKEN="your-gitlab-token"' >> ~/.bashrc  # or ~/.zshrc
+echo 'export GITHUB_TOKEN="your-github-token"' >> ~/.bashrc
+source ~/.bashrc
+```
+
+**Verify tokens are set:**
+```bash
+# Windows PowerShell
+echo $env:GITLAB_TOKEN
+
+# Linux/macOS
+echo $GITLAB_TOKEN
+```
+
+The `ranger.yaml` file is automatically ignored by git to prevent accidental commits.
 
 ### Configuration Notes
 
