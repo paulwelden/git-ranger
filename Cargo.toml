@@ -2,7 +2,7 @@
 name = "git-ranger"
 version = "0.1.0"
 edition = "2021"
-authors = ["Paul W"]
+authors = ["Paul Welden"]
 description = "A command line tool that manages and synchronizes local Git repositories across multiple providers"
 license = "MIT"
 
