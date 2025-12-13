@@ -122,9 +122,27 @@ pub fn sync_command(options: &SyncOptions) -> Result<SyncReport, SyncError> {
                                 
                                 // Convert each GitLab project to a repo config
                                 for project in projects {
+                                    // Preserve the GitLab hierarchy structure
+                                    // Remove the base group path and keep the subgroup structure
+                                    let relative_path = if let Some(suffix) = project.path_with_namespace.strip_prefix(&format!("{}/", group_config.name)) {
+                                        // Project is in a subgroup - keep the subgroup structure
+                                        // e.g., "DSSI/dssi.product/subgroup/repo" -> "subgroup"
+                                        suffix.rsplit_once('/').map(|(parent, _)| parent.to_string())
+                                    } else {
+                                        // Project is directly in the group
+                                        None
+                                    };
+                                    
+                                    // Build the local directory path
+                                    let local_dir = if let Some(subpath) = relative_path {
+                                        group_config.local_dir.as_ref().map(|base| format!("{}/{}", base, subpath))
+                                    } else {
+                                        group_config.local_dir.clone()
+                                    };
+                                    
                                     let repo_config = RepoConfig {
                                         url: project.ssh_url_to_repo.clone(),
-                                        local_dir: group_config.local_dir.clone(),
+                                        local_dir,
                                     };
                                     
                                     let sync_info = analyze_repo(&repo_config, base_dir)?;

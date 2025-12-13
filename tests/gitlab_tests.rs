@@ -66,6 +66,49 @@ fn test_gitlab_projects_array_parsing() {
     assert_eq!(projects[1].name, "project-two");
 }
 
+// Test that projects with subgroup namespaces are correctly parsed
+#[test]
+fn test_gitlab_projects_with_subgroups() {
+    // Test parsing projects that are nested in subgroups
+    let json = r#"[
+        {
+            "id": 1,
+            "name": "repo-in-root",
+            "path": "repo-in-root",
+            "path_with_namespace": "mygroup/repo-in-root",
+            "ssh_url_to_repo": "git@gitlab.example.com:mygroup/repo-in-root.git",
+            "http_url_to_repo": "https://gitlab.example.com/mygroup/repo-in-root.git"
+        },
+        {
+            "id": 2,
+            "name": "repo-in-subgroup",
+            "path": "repo-in-subgroup",
+            "path_with_namespace": "mygroup/subgroup1/repo-in-subgroup",
+            "ssh_url_to_repo": "git@gitlab.example.com:mygroup/subgroup1/repo-in-subgroup.git",
+            "http_url_to_repo": "https://gitlab.example.com/mygroup/subgroup1/repo-in-subgroup.git"
+        },
+        {
+            "id": 3,
+            "name": "repo-in-nested",
+            "path": "repo-in-nested",
+            "path_with_namespace": "mygroup/subgroup1/nested/repo-in-nested",
+            "ssh_url_to_repo": "git@gitlab.example.com:mygroup/subgroup1/nested/repo-in-nested.git",
+            "http_url_to_repo": "https://gitlab.example.com/mygroup/subgroup1/nested/repo-in-nested.git"
+        }
+    ]"#;
+    
+    let projects: Result<Vec<GitLabProject>, _> = serde_json::from_str(json);
+    assert!(projects.is_ok());
+    
+    let projects = projects.unwrap();
+    assert_eq!(projects.len(), 3);
+    
+    // Verify the path_with_namespace includes the full hierarchy
+    assert_eq!(projects[0].path_with_namespace, "mygroup/repo-in-root");
+    assert_eq!(projects[1].path_with_namespace, "mygroup/subgroup1/repo-in-subgroup");
+    assert_eq!(projects[2].path_with_namespace, "mygroup/subgroup1/nested/repo-in-nested");
+}
+
 // Test error type conversions
 #[test]
 fn test_gitlab_error_types() {
