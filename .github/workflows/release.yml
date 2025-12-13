@@ -43,11 +43,11 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Install musl tools (Linux musl)
-        if: matrix.target == 'x86_64-unknown-linux-musl'
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build
+        run: cargo build --release --target ${{ matrix.target }}
 
-      - name: trix.os == 'windows-latest'
+      - name: Package (Windows)
+        if: matrix.os == 'windows-latest'
         run: |
           cd target/${{ matrix.target }}/release
           7z a ../../../${{ matrix.name }} git-ranger.exe
@@ -60,11 +60,7 @@ jobs:
           tar czf ../../../${{ matrix.name }} git-ranger
           cd ../../..
 
-      - name: Upload Release Asset
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:Generate SHA256 checksum (Windows)
+      - name: Generate SHA256 checksum (Windows)
         if: matrix.os == 'windows-latest'
         run: |
           $hash = (Get-FileHash -Algorithm SHA256 ${{ matrix.name }}).Hash
