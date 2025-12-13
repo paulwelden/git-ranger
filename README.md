@@ -97,7 +97,45 @@ The `ranger.yaml` file is automatically ignored by git to prevent accidental com
 
 ### From Binary (Recommended)
 
-Download the latest release for your platform from the [releases page](https://github.com/your-username/git-ranger/releases):
+Download the latest release for your platform from the [releases page](https://github.com/paulwelden/git-ranger/releases):
+
+**Windows:**
+```powershell
+# Download and extract
+Invoke-WebRequest -Uri "https://github.com/paulwelden/git-ranger/releases/latest/download/git-ranger-windows-x86_64.zip" -OutFile "git-ranger.zip"
+Expand-Archive -Path git-ranger.zip -DestinationPath .
+# Move to a directory in your PATH, e.g.:
+Move-Item git-ranger.exe "C:\Program Files\git-ranger\"
+```
+
+**macOS (Intel):**
+```bash
+curl -L https://github.com/paulwelden/git-ranger/releases/latest/download/git-ranger-macos-x86_64.tar.gz | tar xz
+sudo mv git-ranger /usr/local/bin/
+```
+
+**macOS (Apple Silicon):**
+```bash
+curl -L https://github.com/paulwelden/git-ranger/releases/latest/download/git-ranger-macos-aarch64.tar.gz | tar xz
+sudo mv git-ranger /usr/local/bin/
+```
+
+**Linux:**
+```bash
+curl -L https://github.com/paulwelden/git-ranger/releases/latest/download/git-ranger-linux-x86_64.tar.gz | tar xz
+sudo mv git-ranger /usr/local/bin/
+```
+
+### From Source (Requires Rust)
+
+```bash
+cargo install --path .
+```
+
+Or directly from the repository:
+```bash
+cargo install --git https://github.com/paulwelden/git-ranger
+```
 
 **Windows:**
 
