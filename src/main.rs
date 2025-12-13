@@ -1,4 +1,6 @@
 mod commands;
+mod config;
+mod providers;
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -61,14 +63,27 @@ fn main() {
             }
         }
         Commands::Sync { target, dry_run } => {
-            eprintln!("Sync command not yet implemented");
-            if dry_run {
-                eprintln!("  (would run in dry-run mode)");
+            let config_path = PathBuf::from(".").join("ranger.yaml");
+            
+            let options = commands::sync::SyncOptions {
+                config_path,
+                target,
+                dry_run,
+            };
+            
+            match commands::sync::sync_command(&options) {
+                Ok(report) => {
+                    if report.errors.is_empty() {
+                        Ok(())
+                    } else {
+                        Err(1)
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    Err(1)
+                }
             }
-            if let Some(t) = target {
-                eprintln!("  (would sync target: {})", t);
-            }
-            Err(1)
         }
         Commands::Status => {
             eprintln!("Status command not yet implemented");
