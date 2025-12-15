@@ -154,16 +154,84 @@ cargo install --git https://github.com/paulwelden/git-ranger
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-username/git-ranger.git
+git clone https://github.com/paulwelden/git-ranger.git
 cd git-ranger
 
 # Build and install directly to cargo bin directory
 cargo install --path .
+```
 
-# Or build and manually copy
+**For local development (Windows):**
+
+Git Ranger includes a PowerShell build script for easy local building:
+
+```powershell
+# Simple build - creates optimized binary in target\release\
+.\build-release.ps1
+
+# Clean build - removes old artifacts first
+.\build-release.ps1 -Clean
+
+# Build and install to cargo bin directory (adds to PATH automatically)
+.\build-release.ps1 -Install
+
+# Show help
+.\build-release.ps1 -Help
+```
+
+**Manual build (all platforms):**
+
+```bash
+# Build optimized release binary
 cargo build --release
-# Binary will be in target/release/git-ranger (or git-ranger.exe on Windows)
-# Copy to a directory in your PATH
+
+# Binary location:
+# - Windows: target\release\git-ranger.exe
+# - Linux/macOS: target/release/git-ranger
+```
+
+**Adding to PATH manually:**
+
+If you built manually and want to use `git-ranger` from anywhere:
+
+**Windows:**
+```powershell
+# Option 1: Copy to an existing PATH directory
+Copy-Item target\release\git-ranger.exe "$env:USERPROFILE\.local\bin\"
+
+# Option 2: Add the build directory to PATH (current session)
+$env:PATH += ";$PWD\target\release"
+
+# Option 3: Add to PATH permanently (recommended)
+# Add the full path to target\release via System Environment Variables:
+# 1. Open "Edit the system environment variables" from Start menu
+# 2. Click "Environment Variables"
+# 3. Under "User variables", select "Path" and click "Edit"
+# 4. Click "New" and add: C:\Users\YourName\repos\git-ranger\target\release
+# 5. Click OK on all dialogs
+# 6. Restart your terminal
+
+# Or use PowerShell to add to user PATH permanently:
+[Environment]::SetEnvironmentVariable(
+    "Path",
+    [Environment]::GetEnvironmentVariable("Path", "User") + ";$PWD\target\release",
+    "User"
+)
+# Restart your terminal after this
+```
+
+**Linux/macOS:**
+```bash
+# Option 1: Copy to a system bin directory
+sudo cp target/release/git-ranger /usr/local/bin/
+
+# Option 2: Copy to user bin directory
+mkdir -p ~/.local/bin
+cp target/release/git-ranger ~/.local/bin/
+# Ensure ~/.local/bin is in PATH (usually automatic, or add to ~/.bashrc or ~/.zshrc)
+
+# Option 3: Create a symlink
+sudo ln -s "$(pwd)/target/release/git-ranger" /usr/local/bin/git-ranger
 ```
 
 ### Verify Installation
