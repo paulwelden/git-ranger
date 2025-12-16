@@ -85,12 +85,34 @@ fn main() {
             }
         }
         Commands::Status => {
-            eprintln!("Status command not yet implemented");
-            Err(1)
+            let config_path = PathBuf::from(".").join("ranger.yaml");
+            
+            let options = commands::status::StatusOptions {
+                config_path,
+            };
+            
+            match commands::status::status_command(&options) {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    Err(1)
+                }
+            }
         }
         Commands::Ls => {
-            eprintln!("Ls command not yet implemented");
-            Err(1)
+            let config_path = PathBuf::from(".").join("ranger.yaml");
+            
+            let options = commands::ls::LsOptions {
+                config_path,
+            };
+            
+            match commands::ls::ls_command(&options) {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    eprintln!("Error: {}", e);
+                    Err(1)
+                }
+            }
         }
     };
 
