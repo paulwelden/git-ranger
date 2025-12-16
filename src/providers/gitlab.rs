@@ -27,15 +27,6 @@ pub struct GitLabProject {
     pub http_url_to_repo: String,
 }
 
-/// GitLab group information from API
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
-pub struct GitLabGroup {
-    pub id: u64,
-    pub name: String,
-    pub path: String,
-    pub full_path: String,
-}
-
 /// GitLab API client
 pub struct GitLabClient {
     base_url: String,
@@ -134,32 +125,6 @@ impl GitLabClient {
         }
         
         Ok(all_projects)
-    }
-    
-    /// Verify the token is valid by making a simple API call
-    pub fn verify_token(&self) -> Result<(), GitLabError> {
-        let url = format!("{}/api/v4/user", self.base_url);
-        
-        let response = self.client
-            .get(&url)
-            .header("PRIVATE-TOKEN", &self.token)
-            .send()
-            .map_err(|e| GitLabError::RequestFailed(e.to_string()))?;
-        
-        if response.status() == 401 || response.status() == 403 {
-            return Err(GitLabError::AuthenticationFailed(
-                "Invalid or expired token".to_string()
-            ));
-        }
-        
-        if !response.status().is_success() {
-            return Err(GitLabError::RequestFailed(format!(
-                "HTTP {}",
-                response.status()
-            )));
-        }
-        
-        Ok(())
     }
 }
 

@@ -8,20 +8,20 @@ mod init_unit_tests {
     #[test]
     fn test_init_creates_ranger_yaml_in_current_directory() {
         let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("ranger.yaml");
 
         let result = init_command(temp_dir.path());
 
         assert!(result.is_ok());
+        let config_path = result.unwrap();
         assert!(config_path.exists());
+        assert_eq!(config_path.file_name().unwrap(), "ranger.yaml");
     }
 
     #[test]
     fn test_init_creates_valid_yaml_structure() {
         let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("ranger.yaml");
 
-        init_command(temp_dir.path()).unwrap();
+        let config_path = init_command(temp_dir.path()).unwrap();
 
         let content = std::fs::read_to_string(&config_path).unwrap();
         
@@ -34,9 +34,8 @@ mod init_unit_tests {
     #[test]
     fn test_init_creates_parseable_yaml() {
         let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("ranger.yaml");
 
-        init_command(temp_dir.path()).unwrap();
+        let config_path = init_command(temp_dir.path()).unwrap();
 
         let content = std::fs::read_to_string(&config_path).unwrap();
         let parsed: Result<serde_yaml::Value, _> = serde_yaml::from_str(&content);
@@ -66,9 +65,8 @@ mod init_unit_tests {
     #[test]
     fn test_init_includes_example_gitlab_provider() {
         let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("ranger.yaml");
 
-        init_command(temp_dir.path()).unwrap();
+        let config_path = init_command(temp_dir.path()).unwrap();
 
         let content = std::fs::read_to_string(&config_path).unwrap();
         
@@ -80,9 +78,8 @@ mod init_unit_tests {
     #[test]
     fn test_init_includes_example_group_with_recursive() {
         let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("ranger.yaml");
 
-        init_command(temp_dir.path()).unwrap();
+        let config_path = init_command(temp_dir.path()).unwrap();
 
         let content = std::fs::read_to_string(&config_path).unwrap();
         
@@ -93,9 +90,8 @@ mod init_unit_tests {
     #[test]
     fn test_init_includes_example_standalone_repo() {
         let temp_dir = TempDir::new().unwrap();
-        let config_path = temp_dir.path().join("ranger.yaml");
 
-        init_command(temp_dir.path()).unwrap();
+        let config_path = init_command(temp_dir.path()).unwrap();
 
         let content = std::fs::read_to_string(&config_path).unwrap();
         

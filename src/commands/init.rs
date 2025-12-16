@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -76,7 +76,7 @@ repos:
 # IMPORTANT: Add ranger.yaml to .gitignore to prevent accidental commits!
 "#;
 
-pub fn init_command(target_dir: &Path) -> Result<(), InitError> {
+pub fn init_command(target_dir: &Path) -> Result<PathBuf, InitError> {
     let config_path = target_dir.join("ranger.yaml");
     
     // Check if config already exists
@@ -89,7 +89,7 @@ pub fn init_command(target_dir: &Path) -> Result<(), InitError> {
     // Write the default configuration template
     std::fs::write(&config_path, DEFAULT_CONFIG_TEMPLATE)?;
     
-    Ok(())
+    Ok(config_path)
 }
 
 #[cfg(test)]

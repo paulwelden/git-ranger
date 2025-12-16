@@ -48,8 +48,7 @@ fn main() {
             let target_dir = dir.unwrap_or_else(|| PathBuf::from("."));
             
             match commands::init::init_command(&target_dir) {
-                Ok(_) => {
-                    let config_path = target_dir.join("ranger.yaml");
+                Ok(config_path) => {
                     println!("✓ Initialized git-ranger configuration at {}", config_path.display());
                     println!("\nNext steps:");
                     println!("  1. Edit ranger.yaml with your providers and repositories");

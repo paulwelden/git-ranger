@@ -59,116 +59,151 @@ struct RepoSyncInfo {
 }
 
 pub fn sync_command(options: &SyncOptions) -> Result<SyncReport, SyncError> {
-    // Check if config exists
-    if !options.config_path.exists() {
-        return Err(SyncError::ConfigNotFound(
-            options.config_path.display().to_string()
-        ));
+    let config = load_config(&options.config_path)?;
+    let base_dir = options.config_path.parent().unwrap_or_else(|| Path::new("."));
+    
+    let repos_to_sync = discover_repos(&config, base_dir, &options.target)?;
+    let mut report = build_initial_report(&repos_to_sync);
+    
+    if options.dry_run {
+        print_dry_run_report(&report, &repos_to_sync);
+        return Ok(report);
     }
     
-    // Load and parse configuration
-    let config = RangerConfig::load_from_file(&options.config_path)
+    execute_sync(repos_to_sync, &mut report);
+    print_sync_summary(&report);
+    
+    Ok(report)
+}
+
+fn load_config(config_path: &Path) -> Result<RangerConfig, SyncError> {
+    if !config_path.exists() {
+        return Err(SyncError::ConfigNotFound(config_path.display().to_string()));
+    }
+    
+    RangerConfig::load_from_file(config_path)
         .map_err(|e| match e {
             ConfigLoadError::ParseError(msg) => SyncError::ConfigParseError(msg),
             other => SyncError::ConfigLoadError(other),
-        })?;
+        })
+}
+
+fn discover_repos(
+    config: &RangerConfig,
+    base_dir: &Path,
+    target: &Option<String>,
+) -> Result<Vec<RepoSyncInfo>, SyncError> {
+    let mut repos = Vec::new();
     
-    // Get the base directory (where the config file is located)
-    let base_dir = options.config_path.parent()
-        .unwrap_or_else(|| Path::new("."));
-    
-    // Collect all repos to sync
-    let mut repos_to_sync = Vec::new();
-    
-    // Process standalone repos from config
+    // Add standalone repos
     for repo_config in config.get_standalone_repos() {
-        if should_sync_repo(&repo_config, &options.target) {
-            let sync_info = analyze_repo(repo_config, base_dir)?;
-            repos_to_sync.push(sync_info);
+        if should_sync_repo(&repo_config, target) {
+            repos.push(analyze_repo(repo_config, base_dir)?);
         }
     }
     
-    // Expand GitLab groups by querying API
-    if let Some(ref gitlab_provider) = config.providers.gitlab {
-        // Resolve the token from environment variable
-        let token = match gitlab_provider.token.resolve() {
-            Ok(t) => t,
-            Err(e) => {
-                eprintln!("Warning: Failed to resolve GitLab token: {}", e);
-                eprintln!("         Skipping GitLab groups");
-                String::new()
+    // Add GitLab group repos
+    if let Some(gitlab_repos) = discover_gitlab_repos(config, base_dir, target)? {
+        repos.extend(gitlab_repos);
+    }
+    
+    Ok(repos)
+}
+
+fn discover_gitlab_repos(
+    config: &RangerConfig,
+    base_dir: &Path,
+    target: &Option<String>,
+) -> Result<Option<Vec<RepoSyncInfo>>, SyncError> {
+    let gitlab_provider = match &config.providers.gitlab {
+        Some(provider) => provider,
+        None => return Ok(None),
+    };
+    
+    let token = match gitlab_provider.token.resolve() {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("Warning: Failed to resolve GitLab token: {}", e);
+            eprintln!("         Skipping GitLab groups");
+            return Ok(None);
+        }
+    };
+    
+    if token.is_empty() {
+        return Ok(None);
+    }
+    
+    let client = match GitLabClient::new(gitlab_provider.host.clone(), token) {
+        Ok(client) => client,
+        Err(e) => {
+            eprintln!("Warning: Failed to create GitLab client: {}", e);
+            eprintln!("         Skipping GitLab groups");
+            return Ok(None);
+        }
+    };
+    
+    let mut repos = Vec::new();
+    
+    for group_config in &config.groups.gitlab {
+        if let Some(ref target_filter) = target {
+            if !group_config.name.contains(target_filter) {
+                continue;
             }
-        };
+        }
         
-        if !token.is_empty() {
-            // Create GitLab client
-            match GitLabClient::new(gitlab_provider.host.clone(), token) {
-                Ok(client) => {
-                    // Process each GitLab group
-                    for group_config in &config.groups.gitlab {
-                        // Check if we should sync this group based on target filter
-                        if let Some(ref target) = options.target {
-                            if !group_config.name.contains(target) {
-                                continue;
-                            }
-                        }
-                        
-                        println!("Discovering repositories in GitLab group: {}", group_config.name);
-                        
-                        // Query GitLab API for projects in this group
-                        match client.get_group_projects(&group_config.name, group_config.recursive) {
-                            Ok(projects) => {
-                                println!("  Found {} repositories", projects.len());
-                                
-                                // Convert each GitLab project to a repo config
-                                for project in projects {
-                                    // Preserve the GitLab hierarchy structure
-                                    // Remove the base group path and keep the subgroup structure
-                                    let relative_path = if let Some(suffix) = project.path_with_namespace.strip_prefix(&format!("{}/", group_config.name)) {
-                                        // Project is in a subgroup - keep the subgroup structure
-                                        // e.g., "DSSI/dssi.product/subgroup/repo" -> "subgroup"
-                                        suffix.rsplit_once('/').map(|(parent, _)| parent.to_string())
-                                    } else {
-                                        // Project is directly in the group
-                                        None
-                                    };
-                                    
-                                    // Build the local directory path
-                                    let local_dir = if let Some(subpath) = relative_path {
-                                        group_config.local_dir.as_ref().map(|base| format!("{}/{}", base, subpath))
-                                    } else {
-                                        group_config.local_dir.clone()
-                                    };
-                                    
-                                    let repo_config = RepoConfig {
-                                        url: project.ssh_url_to_repo.clone(),
-                                        local_dir,
-                                    };
-                                    
-                                    let sync_info = analyze_repo(&repo_config, base_dir)?;
-                                    repos_to_sync.push(sync_info);
-                                }
-                            }
-                            Err(e) => {
-                                eprintln!("Warning: Failed to get projects for group '{}': {}", 
-                                    group_config.name, e);
-                            }
-                        }
-                    }
+        println!("Discovering repositories in GitLab group: {}", group_config.name);
+        
+        match client.get_group_projects(&group_config.name, group_config.recursive) {
+            Ok(projects) => {
+                println!("  Found {} repositories", projects.len());
+                
+                for project in projects {
+                    let repo_config = convert_gitlab_project_to_repo_config(
+                        &project,
+                        &group_config.name,
+                        &group_config.local_dir,
+                    );
+                    repos.push(analyze_repo(&repo_config, base_dir)?);
                 }
-                Err(e) => {
-                    eprintln!("Warning: Failed to create GitLab client: {}", e);
-                    eprintln!("         Skipping GitLab groups");
-                }
+            }
+            Err(e) => {
+                eprintln!("Warning: Failed to get projects for group '{}': {}", 
+                    group_config.name, e);
             }
         }
     }
     
-    // Build the sync report
-    let mut report = SyncReport::new();
-    report.total_repos = repos_to_sync.len();
+    Ok(Some(repos))
+}
+
+fn convert_gitlab_project_to_repo_config(
+    project: &crate::providers::gitlab::GitLabProject,
+    group_name: &str,
+    base_local_dir: &Option<String>,
+) -> RepoConfig {
+    let relative_path = if let Some(suffix) = project.path_with_namespace.strip_prefix(&format!("{}/", group_name)) {
+        suffix.rsplit_once('/').map(|(parent, _)| parent.to_string())
+    } else {
+        None
+    };
     
-    for repo in &repos_to_sync {
+    let local_dir = if let Some(subpath) = relative_path {
+        base_local_dir.as_ref().map(|base| format!("{}/{}", base, subpath))
+    } else {
+        base_local_dir.clone()
+    };
+    
+    RepoConfig {
+        url: project.ssh_url_to_repo.clone(),
+        local_dir,
+    }
+}
+
+fn build_initial_report(repos: &[RepoSyncInfo]) -> SyncReport {
+    let mut report = SyncReport::new();
+    report.total_repos = repos.len();
+    
+    for repo in repos {
         if repo.exists {
             report.repos_to_fetch += 1;
         } else {
@@ -176,16 +211,12 @@ pub fn sync_command(options: &SyncOptions) -> Result<SyncReport, SyncError> {
         }
     }
     
-    // If dry run, just report what would happen
-    if options.dry_run {
-        print_dry_run_report(&report, &repos_to_sync);
-        return Ok(report);
-    }
-    
-    // Execute sync operations
-    for repo in repos_to_sync {
+    report
+}
+
+fn execute_sync(repos: Vec<RepoSyncInfo>, report: &mut SyncReport) {
+    for repo in repos {
         if repo.exists {
-            // Fetch updates for existing repo
             match fetch_repo(&repo) {
                 Ok(_) => {
                     report.repos_fetched += 1;
@@ -197,7 +228,6 @@ pub fn sync_command(options: &SyncOptions) -> Result<SyncReport, SyncError> {
                 }
             }
         } else {
-            // Clone new repo
             match clone_repo(&repo) {
                 Ok(_) => {
                     report.repos_cloned += 1;
@@ -210,11 +240,6 @@ pub fn sync_command(options: &SyncOptions) -> Result<SyncReport, SyncError> {
             }
         }
     }
-    
-    // Print summary
-    print_sync_summary(&report);
-    
-    Ok(report)
 }
 
 fn should_sync_repo(repo_config: &RepoConfig, target: &Option<String>) -> bool {
