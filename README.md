@@ -233,10 +233,6 @@ git-ranger init
 # Idempotent - safe to run daily or after config changes
 git-ranger sync
 
-# Sync only specific group or repo
-git-ranger sync <group-name>
-git-ranger sync <repo-url>
-
 # Show status of all configured repos (like git status, but workspace-wide)
 git-ranger status
 
