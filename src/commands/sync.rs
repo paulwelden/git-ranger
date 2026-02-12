@@ -151,7 +151,7 @@ fn discover_gitlab_repos(
             }
         }
         
-        println!("Discovering repositories in GitLab group: {}", group_config.name);
+        println!("Discovering active repositories in GitLab group: {}", group_config.name);
         
         match client.get_group_projects(&group_config.name, group_config.recursive) {
             Ok(projects) => {

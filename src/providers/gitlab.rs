@@ -25,6 +25,8 @@ pub struct GitLabProject {
     pub path_with_namespace: String,
     pub ssh_url_to_repo: String,
     pub http_url_to_repo: String,
+    #[serde(default)]
+    pub archived: bool,
 }
 
 /// GitLab API client
@@ -62,12 +64,12 @@ impl GitLabClient {
         // Build URL - if recursive, use different endpoint
         let endpoint = if recursive {
             format!(
-                "{}/api/v4/groups/{}/projects?include_subgroups=true&per_page=100",
+                "{}/api/v4/groups/{}/projects?include_subgroups=true&archived=false&per_page=100",
                 self.base_url, encoded_path
             )
         } else {
             format!(
-                "{}/api/v4/groups/{}/projects?per_page=100",
+                "{}/api/v4/groups/{}/projects?archived=false&per_page=100",
                 self.base_url, encoded_path
             )
         };
@@ -147,6 +149,24 @@ mod tests {
         assert_eq!(project.id, 123);
         assert_eq!(project.name, "test-project");
         assert_eq!(project.path_with_namespace, "group/test-project");
+        assert!(!project.archived);
+    }
+    
+    #[test]
+    fn test_gitlab_project_deserialize_archived() {
+        let json = r#"{
+            "id": 456,
+            "name": "old-project",
+            "path": "old-project",
+            "path_with_namespace": "group/old-project",
+            "ssh_url_to_repo": "git@gitlab.example.com:group/old-project.git",
+            "http_url_to_repo": "https://gitlab.example.com/group/old-project.git",
+            "archived": true
+        }"#;
+        
+        let project: GitLabProject = serde_json::from_str(json).unwrap();
+        assert_eq!(project.id, 456);
+        assert!(project.archived);
     }
     
     #[test]
