@@ -2,6 +2,7 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 use crate::config::{RangerConfig, ConfigLoadError, RepoConfig};
 use crate::providers::gitlab::{GitLabClient, GitLabError};
+use crate::progress::ProgressTracker;
 
 #[derive(Error, Debug)]
 pub enum SyncError {
@@ -62,7 +63,18 @@ pub fn sync_command(options: &SyncOptions) -> Result<SyncReport, SyncError> {
     let config = load_config(&options.config_path)?;
     let base_dir = options.config_path.parent().unwrap_or_else(|| Path::new("."));
     
+    // Initialize progress tracker
+    let mut progress = if options.dry_run {
+        ProgressTracker::hidden()
+    } else {
+        ProgressTracker::new()
+    };
+    
+    // Show discovery spinner
+    let discovery_spinner = progress.create_spinner("Discovering repositories...");
     let repos_to_sync = discover_repos(&config, base_dir, &options.target)?;
+    progress.finish_spinner(discovery_spinner, &format!("✓ Discovered {} repositories", repos_to_sync.len()));
+    
     let mut report = build_initial_report(&repos_to_sync);
     
     if options.dry_run {
@@ -70,7 +82,7 @@ pub fn sync_command(options: &SyncOptions) -> Result<SyncReport, SyncError> {
         return Ok(report);
     }
     
-    execute_sync(repos_to_sync, &mut report);
+    execute_sync(repos_to_sync, &mut report, &mut progress);
     print_sync_summary(&report);
     
     Ok(report)
@@ -214,7 +226,11 @@ fn build_initial_report(repos: &[RepoSyncInfo]) -> SyncReport {
     report
 }
 
-fn execute_sync(repos: Vec<RepoSyncInfo>, report: &mut SyncReport) {
+fn execute_sync(repos: Vec<RepoSyncInfo>, report: &mut SyncReport, progress: &mut ProgressTracker) {
+    // Initialize progress bar for sync operations
+    let total_repos = repos.len() as u64;
+    progress.init_main_bar(total_repos, "Syncing repositories");
+    
     for repo in repos {
         if repo.exists {
             match fetch_repo(&repo) {
@@ -239,7 +255,10 @@ fn execute_sync(repos: Vec<RepoSyncInfo>, report: &mut SyncReport) {
                 }
             }
         }
+        progress.inc();
     }
+    
+    progress.finish_with_message("✓ Sync complete");
 }
 
 fn should_sync_repo(repo_config: &RepoConfig, target: &Option<String>) -> bool {
