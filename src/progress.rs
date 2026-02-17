@@ -44,13 +44,6 @@ impl ProgressTracker {
         }
     }
 
-    /// Set a custom message on the main progress bar
-    pub fn set_message(&self, message: &str) {
-        if let Some(bar) = &self.main_bar {
-            bar.set_message(message.to_string());
-        }
-    }
-
     /// Finish the main progress bar with a completion message
     pub fn finish_with_message(&self, message: &str) {
         if let Some(bar) = &self.main_bar {
