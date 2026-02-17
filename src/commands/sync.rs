@@ -4,6 +4,10 @@ use crate::config::{RangerConfig, ConfigLoadError, RepoConfig};
 use crate::providers::gitlab::{GitLabClient, GitLabError};
 use crate::progress::ProgressTracker;
 
+// UI symbols for consistent output
+const SUCCESS_MARK: &str = "✓";
+const FAILURE_MARK: &str = "✗";
+
 #[derive(Error, Debug)]
 pub enum SyncError {
     #[error("Configuration file not found at {0}")]
@@ -73,7 +77,7 @@ pub fn sync_command(options: &SyncOptions) -> Result<SyncReport, SyncError> {
     // Show discovery spinner
     let discovery_spinner = progress.create_spinner("Discovering repositories...");
     let repos_to_sync = discover_repos(&config, base_dir, &options.target)?;
-    progress.finish_spinner(discovery_spinner, &format!("✓ Discovered {} repositories", repos_to_sync.len()));
+    progress.finish_spinner(discovery_spinner, &format!("{} Discovered {} repositories", SUCCESS_MARK, repos_to_sync.len()));
     
     let mut report = build_initial_report(&repos_to_sync);
     
@@ -236,29 +240,29 @@ fn execute_sync(repos: Vec<RepoSyncInfo>, report: &mut SyncReport, progress: &mu
             match fetch_repo(&repo) {
                 Ok(_) => {
                     report.repos_fetched += 1;
-                    println!("✓ Fetched updates: {}", repo.name);
+                    println!("{} Fetched updates: {}", SUCCESS_MARK, repo.name);
                 }
                 Err(e) => {
                     report.errors.push(format!("Failed to fetch {}: {}", repo.name, e));
-                    eprintln!("✗ Failed to fetch {}: {}", repo.name, e);
+                    eprintln!("{} Failed to fetch {}: {}", FAILURE_MARK, repo.name, e);
                 }
             }
         } else {
             match clone_repo(&repo) {
                 Ok(_) => {
                     report.repos_cloned += 1;
-                    println!("✓ Cloned: {}", repo.name);
+                    println!("{} Cloned: {}", SUCCESS_MARK, repo.name);
                 }
                 Err(e) => {
                     report.errors.push(format!("Failed to clone {}: {}", repo.name, e));
-                    eprintln!("✗ Failed to clone {}: {}", repo.name, e);
+                    eprintln!("{} Failed to clone {}: {}", FAILURE_MARK, repo.name, e);
                 }
             }
         }
         progress.inc();
     }
     
-    progress.finish_with_message("✓ Sync complete");
+    progress.finish_with_message(&format!("{} Sync complete", SUCCESS_MARK));
 }
 
 fn should_sync_repo(repo_config: &RepoConfig, target: &Option<String>) -> bool {

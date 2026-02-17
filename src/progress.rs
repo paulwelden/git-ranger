@@ -1,4 +1,4 @@
-use indicatif::{ProgressBar, ProgressStyle, MultiProgress};
+use indicatif::{ProgressBar, ProgressStyle, MultiProgress, ProgressDrawTarget};
 use std::sync::Arc;
 
 /// A progress tracker for repository operations
@@ -17,9 +17,11 @@ impl ProgressTracker {
     }
 
     /// Create a new progress tracker that doesn't show any progress (for dry-run or quiet mode)
+    /// This uses a hidden draw target to prevent any terminal output
     pub fn hidden() -> Self {
+        let multi = MultiProgress::with_draw_target(ProgressDrawTarget::hidden());
         Self {
-            multi_progress: Arc::new(MultiProgress::new()),
+            multi_progress: Arc::new(multi),
             main_bar: None,
         }
     }
