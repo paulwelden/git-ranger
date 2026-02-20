@@ -121,4 +121,92 @@ mod tests {
         let tracker = ProgressTracker::hidden();
         assert!(tracker.main_bar.is_none());
     }
+
+    #[test]
+    fn test_progress_tracker_default() {
+        let tracker = ProgressTracker::default();
+        assert!(tracker.main_bar.is_none());
+    }
+
+    #[test]
+    fn test_create_spinner() {
+        let tracker = ProgressTracker::new();
+        let spinner = tracker.create_spinner("Test spinner");
+        // Spinner should be created successfully
+        assert!(!spinner.is_finished());
+    }
+
+    #[test]
+    fn test_finish_spinner() {
+        let tracker = ProgressTracker::new();
+        let spinner = tracker.create_spinner("Test spinner");
+        tracker.finish_spinner(spinner.clone(), "Complete");
+        // After finishing, spinner should be done
+        assert!(spinner.is_finished());
+    }
+
+    #[test]
+    fn test_create_sub_progress() {
+        let tracker = ProgressTracker::new();
+        let sub_progress = tracker.create_sub_progress("Sub operation");
+        // Sub-progress should be created successfully
+        assert!(!sub_progress.is_finished());
+    }
+
+    #[test]
+    fn test_finish_sub_progress() {
+        let tracker = ProgressTracker::new();
+        let sub_progress = tracker.create_sub_progress("Sub operation");
+        tracker.finish_sub_progress(sub_progress.clone(), "Done");
+        // After finishing, sub-progress should be done
+        assert!(sub_progress.is_finished());
+    }
+
+    #[test]
+    fn test_main_bar_increment() {
+        let mut tracker = ProgressTracker::new();
+        tracker.init_main_bar(5, "Processing");
+        
+        // Increment should work without panicking
+        tracker.inc();
+        tracker.inc();
+        
+        // Main bar should still exist
+        assert!(tracker.main_bar.is_some());
+    }
+
+    #[test]
+    fn test_finish_main_bar() {
+        let mut tracker = ProgressTracker::new();
+        tracker.init_main_bar(5, "Processing");
+        tracker.finish_with_message("Complete");
+        
+        // Main bar should still exist but be finished
+        assert!(tracker.main_bar.is_some());
+        if let Some(bar) = &tracker.main_bar {
+            assert!(bar.is_finished());
+        }
+    }
+
+    #[test]
+    fn test_hidden_tracker_no_output() {
+        let tracker = ProgressTracker::hidden();
+        let spinner = tracker.create_spinner("Test");
+        tracker.finish_spinner(spinner, "Done");
+        // Should complete without error even though it's hidden
+    }
+
+    #[test]
+    fn test_inc_without_main_bar() {
+        let tracker = ProgressTracker::new();
+        // Should not panic when incrementing without a main bar
+        tracker.inc();
+    }
+
+    #[test]
+    fn test_finish_without_main_bar() {
+        let tracker = ProgressTracker::new();
+        // Should not panic when finishing without a main bar
+        tracker.finish_with_message("Done");
+    }
 }
