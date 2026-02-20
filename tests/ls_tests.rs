@@ -53,13 +53,11 @@ repos:
     fn test_ls_parses_valid_config() {
         let temp_dir = TempDir::new().unwrap();
         let config_path = create_test_config(temp_dir.path());
-        
-        let options = LsOptions {
-            config_path,
-        };
+
+        let options = LsOptions { config_path };
 
         let result = ls_command(&options);
-        
+
         // Should parse successfully
         assert!(result.is_ok());
     }
@@ -68,16 +66,14 @@ repos:
     fn test_ls_lists_all_repos() {
         let temp_dir = TempDir::new().unwrap();
         let config_path = create_test_config(temp_dir.path());
-        
-        let options = LsOptions {
-            config_path,
-        };
+
+        let options = LsOptions { config_path };
 
         let result = ls_command(&options);
-        
+
         assert!(result.is_ok());
         let repos = result.unwrap();
-        
+
         // Should list all standalone repos from config
         assert_eq!(repos.len(), 2);
     }
@@ -86,16 +82,14 @@ repos:
     fn test_ls_includes_repo_names() {
         let temp_dir = TempDir::new().unwrap();
         let config_path = create_test_config(temp_dir.path());
-        
-        let options = LsOptions {
-            config_path,
-        };
+
+        let options = LsOptions { config_path };
 
         let result = ls_command(&options);
-        
+
         assert!(result.is_ok());
         let repos = result.unwrap();
-        
+
         // Each repo should have a name extracted from URL
         assert!(repos.iter().all(|r| !r.name.is_empty()));
         assert!(repos.iter().any(|r| r.name == "test-repo"));
@@ -106,16 +100,14 @@ repos:
     fn test_ls_includes_local_paths() {
         let temp_dir = TempDir::new().unwrap();
         let config_path = create_test_config(temp_dir.path());
-        
-        let options = LsOptions {
-            config_path,
-        };
+
+        let options = LsOptions { config_path };
 
         let result = ls_command(&options);
-        
+
         assert!(result.is_ok());
         let repos = result.unwrap();
-        
+
         // Each repo should have a local path
         assert!(repos.iter().all(|r| !r.local_path.as_os_str().is_empty()));
     }
@@ -129,18 +121,16 @@ repos:
   - url: "https://github.com/example/no-local-dir.git"
 "#;
         fs::write(&config_path, config_content).unwrap();
-        
-        let options = LsOptions {
-            config_path,
-        };
+
+        let options = LsOptions { config_path };
 
         let result = ls_command(&options);
-        
+
         // Should handle repos without local_dir specified
         assert!(result.is_ok());
         let repos = result.unwrap();
         assert_eq!(repos.len(), 1);
-        
+
         // Should default to current dir + repo name
         let repo_path = &repos[0].local_path;
         assert!(repo_path.to_string_lossy().contains("no-local-dir"));
@@ -158,16 +148,14 @@ repos:
     local_dir: "gitlab-stuff"
 "#;
         fs::write(&config_path, config_content).unwrap();
-        
-        let options = LsOptions {
-            config_path,
-        };
+
+        let options = LsOptions { config_path };
 
         let result = ls_command(&options);
-        
+
         assert!(result.is_ok());
         let repos = result.unwrap();
-        
+
         // Should extract repo names correctly from different URL formats
         assert!(repos.iter().any(|r| r.name == "my-awesome-project"));
         assert!(repos.iter().any(|r| r.name == "another-project"));
@@ -177,16 +165,14 @@ repos:
     fn test_ls_shows_full_local_paths() {
         let temp_dir = TempDir::new().unwrap();
         let config_path = create_test_config(temp_dir.path());
-        
-        let options = LsOptions {
-            config_path,
-        };
+
+        let options = LsOptions { config_path };
 
         let result = ls_command(&options);
-        
+
         assert!(result.is_ok());
         let repos = result.unwrap();
-        
+
         // Paths should include both local_dir and repo name
         assert!(repos.iter().any(|r| {
             let path_str = r.local_path.to_string_lossy();
@@ -203,7 +189,7 @@ mod ls_integration_tests {
     #[test]
     fn test_ls_end_to_end_workflow() {
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create a config
         let config_path = temp_dir.path().join("ranger.yaml");
         let config_content = r#"
@@ -216,20 +202,18 @@ repos:
     local_dir: "special"
 "#;
         fs::write(&config_path, config_content).unwrap();
-        
+
         // Run ls command
-        let options = LsOptions {
-            config_path,
-        };
-        
+        let options = LsOptions { config_path };
+
         let result = ls_command(&options);
-        
+
         assert!(result.is_ok());
         let repos = result.unwrap();
-        
+
         // Verify all repos are listed
         assert_eq!(repos.len(), 3);
-        
+
         // Check names
         let names: Vec<String> = repos.iter().map(|r| r.name.clone()).collect();
         assert!(names.contains(&"project-a".to_string()));

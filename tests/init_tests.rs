@@ -24,7 +24,7 @@ mod init_unit_tests {
         let config_path = init_command(temp_dir.path()).unwrap();
 
         let content = std::fs::read_to_string(&config_path).unwrap();
-        
+
         // Should contain main sections
         assert!(content.contains("providers:"));
         assert!(content.contains("groups:"));
@@ -39,7 +39,7 @@ mod init_unit_tests {
 
         let content = std::fs::read_to_string(&config_path).unwrap();
         let parsed: Result<serde_yaml::Value, _> = serde_yaml::from_str(&content);
-        
+
         assert!(parsed.is_ok(), "Generated YAML should be valid");
     }
 
@@ -49,7 +49,7 @@ mod init_unit_tests {
 
         // Create initial config
         init_command(temp_dir.path()).unwrap();
-        
+
         // Try to init again
         let result = init_command(temp_dir.path());
 
@@ -69,7 +69,7 @@ mod init_unit_tests {
         let config_path = init_command(temp_dir.path()).unwrap();
 
         let content = std::fs::read_to_string(&config_path).unwrap();
-        
+
         assert!(content.contains("gitlab:"));
         assert!(content.contains("host:"));
         assert!(content.contains("token:"));
@@ -82,7 +82,7 @@ mod init_unit_tests {
         let config_path = init_command(temp_dir.path()).unwrap();
 
         let content = std::fs::read_to_string(&config_path).unwrap();
-        
+
         assert!(content.contains("recursive:"));
         assert!(content.contains("local_dir:"));
     }
@@ -94,7 +94,7 @@ mod init_unit_tests {
         let config_path = init_command(temp_dir.path()).unwrap();
 
         let content = std::fs::read_to_string(&config_path).unwrap();
-        
+
         // Should have repos section with url example
         assert!(content.contains("- url:"));
     }
@@ -107,7 +107,7 @@ mod init_unit_tests {
         init_command(temp_dir.path()).unwrap();
 
         let content = std::fs::read_to_string(&config_path).unwrap();
-        
+
         // Should include helpful comments
         assert!(content.contains("#"));
     }
@@ -116,8 +116,8 @@ mod init_unit_tests {
 // Integration tests that test through the CLI
 mod init_integration_tests {
     use super::*;
-    use std::process::Command;
     use std::path::PathBuf;
+    use std::process::Command;
 
     fn get_binary_path() -> PathBuf {
         // Get the path to the compiled binary
@@ -159,7 +159,7 @@ mod init_integration_tests {
             .expect("Failed to execute command");
 
         let content = std::fs::read_to_string(&config_path).unwrap();
-        
+
         // Should contain main sections
         assert!(content.contains("providers:"));
         assert!(content.contains("groups:"));
@@ -180,7 +180,7 @@ mod init_integration_tests {
 
         let content = std::fs::read_to_string(&config_path).unwrap();
         let parsed: Result<serde_yaml::Value, _> = serde_yaml::from_str(&content);
-        
+
         assert!(parsed.is_ok(), "Generated YAML should be valid");
     }
 
@@ -195,9 +195,9 @@ mod init_integration_tests {
             .arg(temp_dir.path())
             .output()
             .expect("Failed to execute command");
-        
+
         assert!(output1.status.success());
-        
+
         // Try to init again
         let output2 = Command::new(get_binary_path())
             .arg("init")
@@ -224,7 +224,7 @@ mod init_integration_tests {
             .expect("Failed to execute command");
 
         let content = std::fs::read_to_string(&config_path).unwrap();
-        
+
         assert!(content.contains("gitlab:"));
         assert!(content.contains("host:"));
         assert!(content.contains("token:"));
@@ -243,7 +243,7 @@ mod init_integration_tests {
             .expect("Failed to execute command");
 
         let content = std::fs::read_to_string(&config_path).unwrap();
-        
+
         assert!(content.contains("recursive:"));
         assert!(content.contains("local_dir:"));
     }
@@ -261,7 +261,7 @@ mod init_integration_tests {
             .expect("Failed to execute command");
 
         let content = std::fs::read_to_string(&config_path).unwrap();
-        
+
         // Should have repos section with url example
         assert!(content.contains("- url:"));
     }
@@ -279,7 +279,7 @@ mod init_integration_tests {
             .expect("Failed to execute command");
 
         let content = std::fs::read_to_string(&config_path).unwrap();
-        
+
         // Should include helpful comments
         assert!(content.contains("#"));
     }

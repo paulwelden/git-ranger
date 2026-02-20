@@ -5,13 +5,13 @@ use thiserror::Error;
 pub enum GitLabError {
     #[error("HTTP request failed: {0}")]
     RequestFailed(String),
-    
+
     #[error("Authentication failed: {0}")]
     AuthenticationFailed(String),
-    
+
     #[error("Failed to parse response: {0}")]
     ParseError(String),
-    
+
     #[error("Group not found: {0}")]
     GroupNotFound(String),
 }
@@ -43,14 +43,14 @@ impl GitLabClient {
             .timeout(std::time::Duration::from_secs(30))
             .build()
             .map_err(|e| GitLabError::RequestFailed(e.to_string()))?;
-        
+
         Ok(Self {
             base_url,
             token,
             client,
         })
     }
-    
+
     /// Get all projects in a group
     /// If recursive is true, includes projects from subgroups
     pub fn get_group_projects(
@@ -60,7 +60,7 @@ impl GitLabClient {
     ) -> Result<Vec<GitLabProject>, GitLabError> {
         // URL encode the group path
         let encoded_path = urlencoding::encode(group_path);
-        
+
         // Build URL - if recursive, use different endpoint
         let endpoint = if recursive {
             format!(
@@ -73,32 +73,33 @@ impl GitLabClient {
                 self.base_url, encoded_path
             )
         };
-        
+
         let mut all_projects = Vec::new();
         let mut page = 1;
-        
+
         // GitLab uses pagination
         loop {
             let url = format!("{}&page={}", endpoint, page);
-            
-            let response = self.client
+
+            let response = self
+                .client
                 .get(&url)
                 .header("PRIVATE-TOKEN", &self.token)
                 .send()
                 .map_err(|e| GitLabError::RequestFailed(e.to_string()))?;
-            
+
             // Check for auth errors
             if response.status() == 401 || response.status() == 403 {
                 return Err(GitLabError::AuthenticationFailed(
-                    "Invalid or expired token".to_string()
+                    "Invalid or expired token".to_string(),
                 ));
             }
-            
+
             // Check for not found
             if response.status() == 404 {
                 return Err(GitLabError::GroupNotFound(group_path.to_string()));
             }
-            
+
             // Check for other errors
             if !response.status().is_success() {
                 return Err(GitLabError::RequestFailed(format!(
@@ -107,25 +108,25 @@ impl GitLabClient {
                     response.text().unwrap_or_default()
                 )));
             }
-            
+
             let projects: Vec<GitLabProject> = response
                 .json()
                 .map_err(|e| GitLabError::ParseError(e.to_string()))?;
-            
+
             // If no more projects, we're done
             if projects.is_empty() {
                 break;
             }
-            
+
             all_projects.extend(projects);
             page += 1;
-            
+
             // Safety limit to avoid infinite loops
             if page > 100 {
                 break;
             }
         }
-        
+
         Ok(all_projects)
     }
 }
@@ -133,7 +134,7 @@ impl GitLabClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_gitlab_project_deserialize() {
         let json = r#"{
@@ -144,14 +145,14 @@ mod tests {
             "ssh_url_to_repo": "git@gitlab.example.com:group/test-project.git",
             "http_url_to_repo": "https://gitlab.example.com/group/test-project.git"
         }"#;
-        
+
         let project: GitLabProject = serde_json::from_str(json).unwrap();
         assert_eq!(project.id, 123);
         assert_eq!(project.name, "test-project");
         assert_eq!(project.path_with_namespace, "group/test-project");
         assert!(!project.archived);
     }
-    
+
     #[test]
     fn test_gitlab_project_deserialize_archived() {
         let json = r#"{
@@ -163,22 +164,22 @@ mod tests {
             "http_url_to_repo": "https://gitlab.example.com/group/old-project.git",
             "archived": true
         }"#;
-        
+
         let project: GitLabProject = serde_json::from_str(json).unwrap();
         assert_eq!(project.id, 456);
         assert!(project.archived);
     }
-    
+
     #[test]
     fn test_gitlab_client_creation() {
         let client = GitLabClient::new(
             "https://gitlab.example.com".to_string(),
             "test-token".to_string(),
         );
-        
+
         assert!(client.is_ok());
     }
-    
+
     #[test]
     fn test_url_encoding_group_path() {
         // Test that group paths with slashes are properly encoded

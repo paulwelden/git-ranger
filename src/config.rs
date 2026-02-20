@@ -1,6 +1,6 @@
-use std::env;
-use serde::{Deserialize, Serialize};
 use serde::de::{self, Deserializer, Visitor};
+use serde::{Deserialize, Serialize};
+use std::env;
 use std::fmt;
 
 /// A string value that can be resolved from an environment variable
@@ -20,14 +20,13 @@ impl EnvString {
     /// Plain text is returned as-is
     pub fn resolve(&self) -> Result<String, EnvResolutionError> {
         let value = &self.0;
-        
+
         // Check if this is an environment variable reference
         if value.starts_with("${") && value.ends_with("}") {
-            let var_name = &value[2..value.len()-1];
-            env::var(var_name)
-                .map_err(|_| EnvResolutionError::VariableNotSet {
-                    var_name: var_name.to_string(),
-                })
+            let var_name = &value[2..value.len() - 1];
+            env::var(var_name).map_err(|_| EnvResolutionError::VariableNotSet {
+                var_name: var_name.to_string(),
+            })
         } else {
             // Return the literal value
             Ok(value.clone())
@@ -128,12 +127,12 @@ mod tests {
         let yaml = r#"
         token: "${GITHUB_TOKEN}"
         "#;
-        
+
         #[derive(serde::Deserialize)]
         struct TestConfig {
             token: EnvString,
         }
-        
+
         let config: TestConfig = serde_yaml::from_str(yaml).unwrap();
         assert_eq!(config.token.raw(), "${GITHUB_TOKEN}");
     }
@@ -144,10 +143,10 @@ mod tests {
 pub struct RangerConfig {
     #[serde(default)]
     pub providers: Providers,
-    
+
     #[serde(default)]
     pub groups: Groups,
-    
+
     #[serde(default)]
     pub repos: Vec<RepoConfig>,
 }
@@ -177,7 +176,7 @@ pub struct GitHubProvider {
 pub struct Groups {
     #[serde(default)]
     pub gitlab: Vec<GroupConfig>,
-    
+
     #[serde(default)]
     pub github: Vec<GroupConfig>,
 }
@@ -186,10 +185,10 @@ pub struct Groups {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct GroupConfig {
     pub name: String,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub local_dir: Option<String>,
-    
+
     #[serde(default)]
     pub recursive: bool,
 }
@@ -198,7 +197,7 @@ pub struct GroupConfig {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 pub struct RepoConfig {
     pub url: String,
-    
+
     #[serde(skip_serializing_if = "Option::is_none")]
     pub local_dir: Option<String>,
 }
@@ -206,31 +205,30 @@ pub struct RepoConfig {
 impl RangerConfig {
     /// Load configuration from a YAML file
     pub fn load_from_file(path: &std::path::Path) -> Result<Self, ConfigLoadError> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| ConfigLoadError::IoError(e))?;
-        
+        let content = std::fs::read_to_string(path).map_err(|e| ConfigLoadError::IoError(e))?;
+
         let config: RangerConfig = serde_yaml::from_str(&content)
             .map_err(|e| ConfigLoadError::ParseError(e.to_string()))?;
-        
+
         Ok(config)
     }
-    
+
     /// Get all repositories from the config (groups will need API calls to expand)
     pub fn get_standalone_repos(&self) -> &[RepoConfig] {
         &self.repos
     }
-    
+
     /// Validate that required environment variables for providers are set
     #[allow(dead_code)]
     pub fn validate_providers(&self) -> Result<(), EnvResolutionError> {
         if let Some(ref gitlab) = self.providers.gitlab {
             gitlab.token.resolve()?;
         }
-        
+
         if let Some(ref github) = self.providers.github {
             github.token.resolve()?;
         }
-        
+
         Ok(())
     }
 }
@@ -239,7 +237,7 @@ impl RangerConfig {
 pub enum ConfigLoadError {
     #[error("Failed to read config file: {0}")]
     IoError(#[from] std::io::Error),
-    
+
     #[error("Failed to parse YAML config: {0}")]
     ParseError(String),
 }
@@ -247,7 +245,7 @@ pub enum ConfigLoadError {
 #[cfg(test)]
 mod config_tests {
     use super::*;
-    
+
     #[test]
     fn test_parse_full_config() {
         let yaml = r#"
@@ -272,31 +270,31 @@ repos:
     local_dir: "standalone"
   - url: "https://gitlab.example.com/user/project.git"
 "#;
-        
+
         let config: RangerConfig = serde_yaml::from_str(yaml).unwrap();
-        
+
         assert!(config.providers.gitlab.is_some());
         assert!(config.providers.github.is_some());
         assert_eq!(config.groups.gitlab.len(), 1);
         assert_eq!(config.groups.github.len(), 1);
         assert_eq!(config.repos.len(), 2);
     }
-    
+
     #[test]
     fn test_parse_minimal_config() {
         let yaml = r#"
 repos:
   - url: "https://github.com/example/test.git"
 "#;
-        
+
         let config: RangerConfig = serde_yaml::from_str(yaml).unwrap();
-        
+
         assert!(config.providers.gitlab.is_none());
         assert!(config.providers.github.is_none());
         assert_eq!(config.groups.gitlab.len(), 0);
         assert_eq!(config.repos.len(), 1);
     }
-    
+
     #[test]
     fn test_group_recursive_defaults_to_false() {
         let yaml = r#"
@@ -305,21 +303,21 @@ groups:
     - name: "test-group"
       local_dir: "test"
 "#;
-        
+
         let config: RangerConfig = serde_yaml::from_str(yaml).unwrap();
-        
+
         assert_eq!(config.groups.gitlab[0].recursive, false);
     }
-    
+
     #[test]
     fn test_optional_local_dir() {
         let yaml = r#"
 repos:
   - url: "https://github.com/example/test.git"
 "#;
-        
+
         let config: RangerConfig = serde_yaml::from_str(yaml).unwrap();
-        
+
         assert!(config.repos[0].local_dir.is_none());
     }
 }
