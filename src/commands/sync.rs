@@ -6,7 +6,6 @@ use thiserror::Error;
 
 // UI symbols for consistent output
 const SUCCESS_MARK: &str = "✓";
-const FAILURE_MARK: &str = "✗";
 
 #[derive(Error, Debug)]
 pub enum SyncError {
