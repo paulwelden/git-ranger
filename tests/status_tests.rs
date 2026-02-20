@@ -52,13 +52,11 @@ repos:
     fn test_status_parses_valid_config() {
         let temp_dir = TempDir::new().unwrap();
         let config_path = create_test_config(temp_dir.path());
-        
-        let options = StatusOptions {
-            config_path,
-        };
+
+        let options = StatusOptions { config_path };
 
         let result = status_command(&options);
-        
+
         // Should parse successfully
         assert!(result.is_ok());
     }
@@ -67,16 +65,14 @@ repos:
     fn test_status_reports_repo_not_cloned() {
         let temp_dir = TempDir::new().unwrap();
         let config_path = create_test_config(temp_dir.path());
-        
-        let options = StatusOptions {
-            config_path,
-        };
+
+        let options = StatusOptions { config_path };
 
         let result = status_command(&options);
-        
+
         assert!(result.is_ok());
         let report = result.unwrap();
-        
+
         // Should identify that repos are not yet cloned
         assert!(report.total_repos > 0);
         assert!(report.repos_not_cloned > 0);
@@ -86,21 +82,19 @@ repos:
     fn test_status_detects_cloned_repo() {
         let temp_dir = TempDir::new().unwrap();
         let config_path = create_test_config(temp_dir.path());
-        
+
         // Create a fake git repo directory
         let standalone_dir = temp_dir.path().join("standalone").join("test-repo");
         fs::create_dir_all(&standalone_dir).unwrap();
         fs::create_dir_all(standalone_dir.join(".git")).unwrap();
-        
-        let options = StatusOptions {
-            config_path,
-        };
+
+        let options = StatusOptions { config_path };
 
         let result = status_command(&options);
-        
+
         assert!(result.is_ok());
         let report = result.unwrap();
-        
+
         // Should detect at least one cloned repo
         assert!(report.repos_cloned >= 1);
     }
@@ -109,16 +103,14 @@ repos:
     fn test_status_counts_all_repos_correctly() {
         let temp_dir = TempDir::new().unwrap();
         let config_path = create_test_config(temp_dir.path());
-        
-        let options = StatusOptions {
-            config_path,
-        };
+
+        let options = StatusOptions { config_path };
 
         let result = status_command(&options);
-        
+
         assert!(result.is_ok());
         let report = result.unwrap();
-        
+
         // Config has 2 standalone repos
         assert!(report.total_repos >= 2);
     }
@@ -132,13 +124,11 @@ repos:
   - url: "https://github.com/example/no-local-dir.git"
 "#;
         fs::write(&config_path, config_content).unwrap();
-        
-        let options = StatusOptions {
-            config_path,
-        };
+
+        let options = StatusOptions { config_path };
 
         let result = status_command(&options);
-        
+
         // Should handle repos without local_dir specified
         assert!(result.is_ok());
     }
@@ -147,16 +137,14 @@ repos:
     fn test_status_identifies_repo_name_from_url() {
         let temp_dir = TempDir::new().unwrap();
         let config_path = create_test_config(temp_dir.path());
-        
-        let options = StatusOptions {
-            config_path,
-        };
+
+        let options = StatusOptions { config_path };
 
         let result = status_command(&options);
-        
+
         assert!(result.is_ok());
         let report = result.unwrap();
-        
+
         // Should have repo entries with proper names extracted from URLs
         assert!(!report.repos.is_empty());
         assert!(report.repos.iter().any(|r| r.name.contains("test-repo")));
@@ -171,7 +159,7 @@ mod status_integration_tests {
     #[test]
     fn test_status_end_to_end_workflow() {
         let temp_dir = TempDir::new().unwrap();
-        
+
         // Create a config
         let config_path = temp_dir.path().join("ranger.yaml");
         let config_content = r#"
@@ -182,17 +170,15 @@ repos:
     local_dir: "projects"
 "#;
         fs::write(&config_path, config_content).unwrap();
-        
+
         // Run status command
-        let options = StatusOptions {
-            config_path,
-        };
-        
+        let options = StatusOptions { config_path };
+
         let result = status_command(&options);
-        
+
         assert!(result.is_ok());
         let report = result.unwrap();
-        
+
         // Verify the report structure
         assert_eq!(report.total_repos, 2);
         assert_eq!(report.repos.len(), 2);

@@ -1,4 +1,4 @@
-use indicatif::{ProgressBar, ProgressStyle, MultiProgress, ProgressDrawTarget};
+use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use std::sync::Arc;
 
 /// A progress tracker for repository operations
@@ -73,9 +73,16 @@ impl ProgressTracker {
     }
 
     /// Create a sub-progress bar for individual operations (like git clone/fetch)
-    /// This shows an indeterminate progress bar for operations where we can't track exact progress
+    /// This shows an indeterminate progress bar for operations where we can't track exact progress.
+    /// When a main bar exists, the sub-bar is inserted before it so the main bar stays visible
+    /// at the bottom of the terminal during multi-repo operations.
     pub fn create_sub_progress(&self, message: &str) -> ProgressBar {
-        let pb = self.multi_progress.add(ProgressBar::new_spinner());
+        let pb = if let Some(main) = &self.main_bar {
+            self.multi_progress
+                .insert_before(main, ProgressBar::new_spinner())
+        } else {
+            self.multi_progress.add(ProgressBar::new_spinner())
+        };
         pb.set_style(
             ProgressStyle::default_spinner()
                 .template("  {spinner:.cyan} {msg}")
@@ -87,9 +94,10 @@ impl ProgressTracker {
         pb
     }
 
-    /// Finish a sub-progress bar with a completion message
-    pub fn finish_sub_progress(&self, pb: ProgressBar, message: &str) {
-        pb.finish_with_message(format!("  {}", message));
+    /// Finish a sub-progress bar, clearing it from the display so completed entries
+    /// do not accumulate and push the main bar off screen.
+    pub fn finish_sub_progress(&self, pb: ProgressBar) {
+        pb.finish_and_clear();
     }
 }
 
@@ -157,7 +165,7 @@ mod tests {
     fn test_finish_sub_progress() {
         let tracker = ProgressTracker::new();
         let sub_progress = tracker.create_sub_progress("Sub operation");
-        tracker.finish_sub_progress(sub_progress.clone(), "Done");
+        tracker.finish_sub_progress(sub_progress.clone());
         // After finishing, sub-progress should be done
         assert!(sub_progress.is_finished());
     }
@@ -166,11 +174,11 @@ mod tests {
     fn test_main_bar_increment() {
         let mut tracker = ProgressTracker::new();
         tracker.init_main_bar(5, "Processing");
-        
+
         // Increment should work without panicking
         tracker.inc();
         tracker.inc();
-        
+
         // Main bar should still exist
         assert!(tracker.main_bar.is_some());
     }
@@ -180,7 +188,7 @@ mod tests {
         let mut tracker = ProgressTracker::new();
         tracker.init_main_bar(5, "Processing");
         tracker.finish_with_message("Complete");
-        
+
         // Main bar should still exist but be finished
         assert!(tracker.main_bar.is_some());
         if let Some(bar) = &tracker.main_bar {

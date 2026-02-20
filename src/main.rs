@@ -1,7 +1,7 @@
 mod commands;
 mod config;
-mod providers;
 mod progress;
+mod providers;
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
@@ -23,20 +23,20 @@ enum Commands {
         #[arg(short, long, value_name = "DIR")]
         dir: Option<PathBuf>,
     },
-    
+
     /// Synchronize workspace: clone missing repos and fetch updates
     Sync {
         /// Target to sync (group name or repo URL, syncs all if not specified)
         target: Option<String>,
-        
+
         /// Preview what would happen without making changes
         #[arg(short = 'n', long)]
         dry_run: bool,
     },
-    
+
     /// Show status of all configured repos
     Status,
-    
+
     /// List all repos from config with their local paths
     Ls,
 }
@@ -47,10 +47,13 @@ fn main() {
     let result = match cli.command {
         Commands::Init { dir } => {
             let target_dir = dir.unwrap_or_else(|| PathBuf::from("."));
-            
+
             match commands::init::init_command(&target_dir) {
                 Ok(config_path) => {
-                    println!("✓ Initialized git-ranger configuration at {}", config_path.display());
+                    println!(
+                        "✓ Initialized git-ranger configuration at {}",
+                        config_path.display()
+                    );
                     println!("\nNext steps:");
                     println!("  1. Edit ranger.yaml with your providers and repositories");
                     println!("  2. Run 'git-ranger sync' to clone and sync everything");
@@ -64,13 +67,13 @@ fn main() {
         }
         Commands::Sync { target, dry_run } => {
             let config_path = PathBuf::from(".").join("ranger.yaml");
-            
+
             let options = commands::sync::SyncOptions {
                 config_path,
                 target,
                 dry_run,
             };
-            
+
             match commands::sync::sync_command(&options) {
                 Ok(report) => {
                     if report.errors.is_empty() {
@@ -87,11 +90,9 @@ fn main() {
         }
         Commands::Status => {
             let config_path = PathBuf::from(".").join("ranger.yaml");
-            
-            let options = commands::status::StatusOptions {
-                config_path,
-            };
-            
+
+            let options = commands::status::StatusOptions { config_path };
+
             match commands::status::status_command(&options) {
                 Ok(_) => Ok(()),
                 Err(e) => {
@@ -102,11 +103,9 @@ fn main() {
         }
         Commands::Ls => {
             let config_path = PathBuf::from(".").join("ranger.yaml");
-            
-            let options = commands::ls::LsOptions {
-                config_path,
-            };
-            
+
+            let options = commands::ls::LsOptions { config_path };
+
             match commands::ls::ls_command(&options) {
                 Ok(_) => Ok(()),
                 Err(e) => {

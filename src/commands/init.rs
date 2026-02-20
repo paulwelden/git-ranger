@@ -5,7 +5,7 @@ use thiserror::Error;
 pub enum InitError {
     #[error("Configuration file already exists at {0}")]
     ConfigAlreadyExists(String),
-    
+
     #[error("Failed to write configuration file: {0}")]
     IoError(#[from] std::io::Error),
 }
@@ -78,34 +78,34 @@ repos:
 
 pub fn init_command(target_dir: &Path) -> Result<PathBuf, InitError> {
     let config_path = target_dir.join("ranger.yaml");
-    
+
     // Check if config already exists
     if config_path.exists() {
         return Err(InitError::ConfigAlreadyExists(
-            config_path.display().to_string()
+            config_path.display().to_string(),
         ));
     }
-    
+
     // Write the default configuration template
     std::fs::write(&config_path, DEFAULT_CONFIG_TEMPLATE)?;
-    
+
     Ok(config_path)
 }
 
 #[cfg(test)]
 mod unit_tests {
     use super::*;
-    
+
     #[test]
     fn test_default_config_is_valid_yaml() {
         let parsed: Result<serde_yaml::Value, _> = serde_yaml::from_str(DEFAULT_CONFIG_TEMPLATE);
         assert!(parsed.is_ok(), "Default template must be valid YAML");
     }
-    
+
     #[test]
     fn test_default_config_has_required_sections() {
         let parsed: serde_yaml::Value = serde_yaml::from_str(DEFAULT_CONFIG_TEMPLATE).unwrap();
-        
+
         assert!(parsed.get("providers").is_some());
         assert!(parsed.get("groups").is_some());
         assert!(parsed.get("repos").is_some());

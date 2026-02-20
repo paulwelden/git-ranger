@@ -1,4 +1,4 @@
-use git_ranger::providers::gitlab::{GitLabClient, GitLabProject, GitLabError};
+use git_ranger::providers::gitlab::{GitLabClient, GitLabError, GitLabProject};
 
 // Note: These tests require a running GitLab instance or mock server
 // For now, we test basic functionality and error handling
@@ -9,7 +9,7 @@ fn test_gitlab_client_creation() {
         "https://gitlab.example.com".to_string(),
         "test-token".to_string(),
     );
-    
+
     assert!(client.is_ok());
 }
 
@@ -24,14 +24,17 @@ fn test_gitlab_project_structure() {
         "ssh_url_to_repo": "git@gitlab.example.com:mygroup/subgroup/my-awesome-project.git",
         "http_url_to_repo": "https://gitlab.example.com/mygroup/subgroup/my-awesome-project.git"
     }"#;
-    
+
     let project: Result<GitLabProject, _> = serde_json::from_str(json);
     assert!(project.is_ok());
-    
+
     let project = project.unwrap();
     assert_eq!(project.id, 42);
     assert_eq!(project.name, "my-awesome-project");
-    assert_eq!(project.path_with_namespace, "mygroup/subgroup/my-awesome-project");
+    assert_eq!(
+        project.path_with_namespace,
+        "mygroup/subgroup/my-awesome-project"
+    );
     assert!(project.ssh_url_to_repo.ends_with(".git"));
 }
 
@@ -56,10 +59,10 @@ fn test_gitlab_projects_array_parsing() {
             "http_url_to_repo": "https://gitlab.example.com/group/project-two.git"
         }
     ]"#;
-    
+
     let projects: Result<Vec<GitLabProject>, _> = serde_json::from_str(json);
     assert!(projects.is_ok());
-    
+
     let projects = projects.unwrap();
     assert_eq!(projects.len(), 2);
     assert_eq!(projects[0].name, "project-one");
@@ -96,17 +99,23 @@ fn test_gitlab_projects_with_subgroups() {
             "http_url_to_repo": "https://gitlab.example.com/mygroup/subgroup1/nested/repo-in-nested.git"
         }
     ]"#;
-    
+
     let projects: Result<Vec<GitLabProject>, _> = serde_json::from_str(json);
     assert!(projects.is_ok());
-    
+
     let projects = projects.unwrap();
     assert_eq!(projects.len(), 3);
-    
+
     // Verify the path_with_namespace includes the full hierarchy
     assert_eq!(projects[0].path_with_namespace, "mygroup/repo-in-root");
-    assert_eq!(projects[1].path_with_namespace, "mygroup/subgroup1/repo-in-subgroup");
-    assert_eq!(projects[2].path_with_namespace, "mygroup/subgroup1/nested/repo-in-nested");
+    assert_eq!(
+        projects[1].path_with_namespace,
+        "mygroup/subgroup1/repo-in-subgroup"
+    );
+    assert_eq!(
+        projects[2].path_with_namespace,
+        "mygroup/subgroup1/nested/repo-in-nested"
+    );
 }
 
 // Test error type conversions
@@ -114,10 +123,10 @@ fn test_gitlab_projects_with_subgroups() {
 fn test_gitlab_error_types() {
     let auth_error = GitLabError::AuthenticationFailed("test".to_string());
     assert!(auth_error.to_string().contains("Authentication failed"));
-    
+
     let not_found = GitLabError::GroupNotFound("mygroup".to_string());
     assert!(not_found.to_string().contains("Group not found"));
-    
+
     let request_failed = GitLabError::RequestFailed("network error".to_string());
     assert!(request_failed.to_string().contains("HTTP request failed"));
 }
@@ -130,10 +139,10 @@ fn test_sync_with_real_gitlab_group() {
     // 1. Real GitLab instance URL
     // 2. Valid token in environment
     // 3. Known group with repos
-    
+
     // Example usage:
     // cargo test test_sync_with_real_gitlab_group -- --ignored
-    
+
     // For now, this serves as documentation
     println!("To test with real GitLab:");
     println!("1. Set GITLAB_TOKEN environment variable");
