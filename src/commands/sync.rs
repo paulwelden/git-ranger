@@ -395,7 +395,7 @@ fn fetch_repo(repo: &RepoSyncInfo, progress: &ProgressTracker) -> Result<(), Syn
         .arg("--all")
         .arg("--progress");
     
-    execute_git_with_progress(command, progress, &repo.name, "Fetching updates for", "Fetched")
+    execute_git_with_progress(command, progress, &repo.name, "Fetching", "Fetched")
 }
 
 #[cfg(test)]
