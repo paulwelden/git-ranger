@@ -71,6 +71,26 @@ impl ProgressTracker {
     pub fn finish_spinner(&self, spinner: ProgressBar, message: &str) {
         spinner.finish_with_message(message.to_string());
     }
+
+    /// Create a sub-progress bar for individual operations (like git clone/fetch)
+    /// This shows an indeterminate progress bar for operations where we can't track exact progress
+    pub fn create_sub_progress(&self, message: &str) -> ProgressBar {
+        let pb = self.multi_progress.add(ProgressBar::new_spinner());
+        pb.set_style(
+            ProgressStyle::default_spinner()
+                .template("  {spinner:.cyan} {msg}")
+                .expect("Invalid spinner template")
+                .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+        );
+        pb.set_message(message.to_string());
+        pb.enable_steady_tick(std::time::Duration::from_millis(100));
+        pb
+    }
+
+    /// Finish a sub-progress bar with a completion message
+    pub fn finish_sub_progress(&self, pb: ProgressBar, message: &str) {
+        pb.finish_with_message(format!("  {}", message));
+    }
 }
 
 impl Default for ProgressTracker {
