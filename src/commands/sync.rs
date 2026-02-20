@@ -2,6 +2,11 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 use crate::config::{RangerConfig, ConfigLoadError, RepoConfig};
 use crate::providers::gitlab::{GitLabClient, GitLabError};
+use crate::progress::ProgressTracker;
+
+// UI symbols for consistent output
+const SUCCESS_MARK: &str = "✓";
+const FAILURE_MARK: &str = "✗";
 
 #[derive(Error, Debug)]
 pub enum SyncError {
@@ -62,7 +67,18 @@ pub fn sync_command(options: &SyncOptions) -> Result<SyncReport, SyncError> {
     let config = load_config(&options.config_path)?;
     let base_dir = options.config_path.parent().unwrap_or_else(|| Path::new("."));
     
+    // Initialize progress tracker
+    let mut progress = if options.dry_run {
+        ProgressTracker::hidden()
+    } else {
+        ProgressTracker::new()
+    };
+    
+    // Show discovery spinner
+    let discovery_spinner = progress.create_spinner("Discovering repositories...");
     let repos_to_sync = discover_repos(&config, base_dir, &options.target)?;
+    progress.finish_spinner(discovery_spinner, &format!("{} Discovered {} repositories", SUCCESS_MARK, repos_to_sync.len()));
+    
     let mut report = build_initial_report(&repos_to_sync);
     
     if options.dry_run {
@@ -70,7 +86,7 @@ pub fn sync_command(options: &SyncOptions) -> Result<SyncReport, SyncError> {
         return Ok(report);
     }
     
-    execute_sync(repos_to_sync, &mut report);
+    execute_sync(repos_to_sync, &mut report, &mut progress);
     print_sync_summary(&report);
     
     Ok(report)
@@ -214,32 +230,35 @@ fn build_initial_report(repos: &[RepoSyncInfo]) -> SyncReport {
     report
 }
 
-fn execute_sync(repos: Vec<RepoSyncInfo>, report: &mut SyncReport) {
+fn execute_sync(repos: Vec<RepoSyncInfo>, report: &mut SyncReport, progress: &mut ProgressTracker) {
+    // Initialize progress bar for sync operations
+    let total_repos = repos.len() as u64;
+    progress.init_main_bar(total_repos, "Syncing repositories");
+    
     for repo in repos {
         if repo.exists {
-            match fetch_repo(&repo) {
+            match fetch_repo(&repo, progress) {
                 Ok(_) => {
                     report.repos_fetched += 1;
-                    println!("✓ Fetched updates: {}", repo.name);
                 }
                 Err(e) => {
                     report.errors.push(format!("Failed to fetch {}: {}", repo.name, e));
-                    eprintln!("✗ Failed to fetch {}: {}", repo.name, e);
                 }
             }
         } else {
-            match clone_repo(&repo) {
+            match clone_repo(&repo, progress) {
                 Ok(_) => {
                     report.repos_cloned += 1;
-                    println!("✓ Cloned: {}", repo.name);
                 }
                 Err(e) => {
                     report.errors.push(format!("Failed to clone {}: {}", repo.name, e));
-                    eprintln!("✗ Failed to clone {}: {}", repo.name, e);
                 }
             }
         }
+        progress.inc();
     }
+    
+    progress.finish_with_message(&format!("{} Sync complete", SUCCESS_MARK));
 }
 
 fn should_sync_repo(repo_config: &RepoConfig, target: &Option<String>) -> bool {
@@ -320,44 +339,63 @@ fn print_sync_summary(report: &SyncReport) {
     }
 }
 
-fn clone_repo(repo: &RepoSyncInfo) -> Result<(), SyncError> {
+/// Execute a git command with progress tracking
+/// Returns Ok(()) on success, Err on failure
+fn execute_git_with_progress(
+    mut command: std::process::Command,
+    progress: &ProgressTracker,
+    repo_name: &str,
+    operation: &str,
+    success_verb: &str,
+) -> Result<(), SyncError> {
+    let sub_progress = progress.create_sub_progress(&format!("{} {}...", operation, repo_name));
+    
+    let result = command.output();
+    
+    match result {
+        Ok(output) => {
+            if output.status.success() {
+                progress.finish_sub_progress(sub_progress, &format!("{} {} {}", SUCCESS_MARK, success_verb, repo_name));
+                Ok(())
+            } else {
+                progress.finish_sub_progress(sub_progress, &format!("{} Failed to {} {}", FAILURE_MARK, operation.to_lowercase(), repo_name));
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                Err(SyncError::GitError(format!("git {} failed: {}", operation.to_lowercase(), stderr)))
+            }
+        }
+        Err(e) => {
+            progress.finish_sub_progress(sub_progress, &format!("{} Failed to {} {}", FAILURE_MARK, operation.to_lowercase(), repo_name));
+            Err(SyncError::GitError(format!("Failed to execute git {}: {}", operation.to_lowercase(), e)))
+        }
+    }
+}
+
+fn clone_repo(repo: &RepoSyncInfo, progress: &ProgressTracker) -> Result<(), SyncError> {
     // Create parent directory if needed
     if let Some(parent) = repo.local_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     
-    // Use git command to clone (this is a placeholder - in production might use git2 crate)
-    let output = std::process::Command::new("git")
+    let mut command = std::process::Command::new("git");
+    command
         .arg("clone")
+        .arg("--progress")
         .arg(&repo.url)
-        .arg(&repo.local_path)
-        .output()
-        .map_err(|e| SyncError::GitError(format!("Failed to execute git clone: {}", e)))?;
+        .arg(&repo.local_path);
     
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(SyncError::GitError(format!("git clone failed: {}", stderr)));
-    }
-    
-    Ok(())
+    execute_git_with_progress(command, progress, &repo.name, "Cloning", "Cloned")
 }
 
-fn fetch_repo(repo: &RepoSyncInfo) -> Result<(), SyncError> {
-    // Use git command to fetch (this is a placeholder - in production might use git2 crate)
-    let output = std::process::Command::new("git")
+fn fetch_repo(repo: &RepoSyncInfo, progress: &ProgressTracker) -> Result<(), SyncError> {
+    let mut command = std::process::Command::new("git");
+    command
         .arg("-C")
         .arg(&repo.local_path)
         .arg("fetch")
         .arg("--all")
-        .output()
-        .map_err(|e| SyncError::GitError(format!("Failed to execute git fetch: {}", e)))?;
+        .arg("--progress");
     
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(SyncError::GitError(format!("git fetch failed: {}", stderr)));
-    }
-    
-    Ok(())
+    execute_git_with_progress(command, progress, &repo.name, "Fetching", "Fetched")
 }
 
 #[cfg(test)]
@@ -410,5 +448,85 @@ mod unit_tests {
         };
         
         assert!(!should_sync_repo(&repo, &Some("other".to_string())));
+    }
+
+    #[test]
+    fn test_build_initial_report() {
+        let repos = vec![
+            RepoSyncInfo {
+                url: "https://github.com/example/test1.git".to_string(),
+                name: "test1".to_string(),
+                local_path: PathBuf::from("/tmp/test1"),
+                exists: false,
+            },
+            RepoSyncInfo {
+                url: "https://github.com/example/test2.git".to_string(),
+                name: "test2".to_string(),
+                local_path: PathBuf::from("/tmp/test2"),
+                exists: true,
+            },
+        ];
+        
+        let report = build_initial_report(&repos);
+        
+        assert_eq!(report.total_repos, 2);
+        assert_eq!(report.repos_to_clone, 1);
+        assert_eq!(report.repos_to_fetch, 1);
+        assert_eq!(report.repos_cloned, 0);
+        assert_eq!(report.repos_fetched, 0);
+    }
+
+    #[test]
+    fn test_analyze_repo_with_local_dir() {
+        let repo_config = RepoConfig {
+            url: "https://github.com/example/my-repo.git".to_string(),
+            local_dir: Some("projects".to_string()),
+        };
+        let base_dir = Path::new("/home/user");
+        
+        let result = analyze_repo(&repo_config, base_dir);
+        
+        assert!(result.is_ok());
+        let info = result.unwrap();
+        assert_eq!(info.name, "my-repo");
+        assert_eq!(info.url, "https://github.com/example/my-repo.git");
+        assert_eq!(info.local_path, PathBuf::from("/home/user/projects/my-repo"));
+    }
+
+    #[test]
+    fn test_analyze_repo_without_local_dir() {
+        let repo_config = RepoConfig {
+            url: "https://github.com/example/another-repo.git".to_string(),
+            local_dir: None,
+        };
+        let base_dir = Path::new("/home/user");
+        
+        let result = analyze_repo(&repo_config, base_dir);
+        
+        assert!(result.is_ok());
+        let info = result.unwrap();
+        assert_eq!(info.name, "another-repo");
+        assert_eq!(info.local_path, PathBuf::from("/home/user/another-repo"));
+    }
+
+    #[test]
+    fn test_sync_report_default() {
+        let report = SyncReport::default();
+        
+        assert_eq!(report.total_repos, 0);
+        assert_eq!(report.repos_to_clone, 0);
+        assert_eq!(report.repos_to_fetch, 0);
+        assert_eq!(report.repos_cloned, 0);
+        assert_eq!(report.repos_fetched, 0);
+        assert_eq!(report.errors.len(), 0);
+    }
+
+    #[test]
+    fn test_sync_report_new() {
+        let report = SyncReport::new();
+        
+        assert_eq!(report.total_repos, 0);
+        assert_eq!(report.repos_to_clone, 0);
+        assert_eq!(report.repos_to_fetch, 0);
     }
 }
