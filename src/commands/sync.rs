@@ -349,23 +349,29 @@ fn clone_repo(repo: &RepoSyncInfo, progress: &ProgressTracker) -> Result<(), Syn
     let sub_progress = progress.create_sub_progress(&format!("Cloning {}...", repo.name));
     
     // Use git command to clone (this is a placeholder - in production might use git2 crate)
-    let output = std::process::Command::new("git")
+    let result = std::process::Command::new("git")
         .arg("clone")
         .arg("--progress")
         .arg(&repo.url)
         .arg(&repo.local_path)
-        .output()
-        .map_err(|e| SyncError::GitError(format!("Failed to execute git clone: {}", e)))?;
+        .output();
     
-    if output.status.success() {
-        progress.finish_sub_progress(sub_progress, &format!("{} Cloned {}", SUCCESS_MARK, repo.name));
-    } else {
-        progress.finish_sub_progress(sub_progress, &format!("{} Failed to clone {}", FAILURE_MARK, repo.name));
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(SyncError::GitError(format!("git clone failed: {}", stderr)));
+    match result {
+        Ok(output) => {
+            if output.status.success() {
+                progress.finish_sub_progress(sub_progress, &format!("{} Cloned {}", SUCCESS_MARK, repo.name));
+                Ok(())
+            } else {
+                progress.finish_sub_progress(sub_progress, &format!("{} Failed to clone {}", FAILURE_MARK, repo.name));
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                Err(SyncError::GitError(format!("git clone failed: {}", stderr)))
+            }
+        }
+        Err(e) => {
+            progress.finish_sub_progress(sub_progress, &format!("{} Failed to clone {}", FAILURE_MARK, repo.name));
+            Err(SyncError::GitError(format!("Failed to execute git clone: {}", e)))
+        }
     }
-    
-    Ok(())
 }
 
 fn fetch_repo(repo: &RepoSyncInfo, progress: &ProgressTracker) -> Result<(), SyncError> {
@@ -373,24 +379,30 @@ fn fetch_repo(repo: &RepoSyncInfo, progress: &ProgressTracker) -> Result<(), Syn
     let sub_progress = progress.create_sub_progress(&format!("Fetching updates for {}...", repo.name));
     
     // Use git command to fetch (this is a placeholder - in production might use git2 crate)
-    let output = std::process::Command::new("git")
+    let result = std::process::Command::new("git")
         .arg("-C")
         .arg(&repo.local_path)
         .arg("fetch")
         .arg("--all")
         .arg("--progress")
-        .output()
-        .map_err(|e| SyncError::GitError(format!("Failed to execute git fetch: {}", e)))?;
+        .output();
     
-    if output.status.success() {
-        progress.finish_sub_progress(sub_progress, &format!("{} Fetched {}", SUCCESS_MARK, repo.name));
-    } else {
-        progress.finish_sub_progress(sub_progress, &format!("{} Failed to fetch {}", FAILURE_MARK, repo.name));
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(SyncError::GitError(format!("git fetch failed: {}", stderr)));
+    match result {
+        Ok(output) => {
+            if output.status.success() {
+                progress.finish_sub_progress(sub_progress, &format!("{} Fetched {}", SUCCESS_MARK, repo.name));
+                Ok(())
+            } else {
+                progress.finish_sub_progress(sub_progress, &format!("{} Failed to fetch {}", FAILURE_MARK, repo.name));
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                Err(SyncError::GitError(format!("git fetch failed: {}", stderr)))
+            }
+        }
+        Err(e) => {
+            progress.finish_sub_progress(sub_progress, &format!("{} Failed to fetch {}", FAILURE_MARK, repo.name));
+            Err(SyncError::GitError(format!("Failed to execute git fetch: {}", e)))
+        }
     }
-    
-    Ok(())
 }
 
 #[cfg(test)]
