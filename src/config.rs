@@ -10,7 +10,7 @@ pub struct EnvString(String);
 
 impl EnvString {
     /// Create a new EnvString from a raw value
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Public library API, unused in binary crate
     pub fn new(value: String) -> Self {
         EnvString(value)
     }
@@ -34,13 +34,12 @@ impl EnvString {
     }
 
     /// Get the raw value without resolving
-    #[allow(dead_code)]
+    #[allow(dead_code)] // Public library API, unused in binary crate
     pub fn raw(&self) -> &str {
         &self.0
     }
 }
 
-#[allow(dead_code)]
 #[derive(Debug, thiserror::Error)]
 pub enum EnvResolutionError {
     #[error("Environment variable '{var_name}' is not set")]
@@ -94,6 +93,7 @@ impl<'de> Deserialize<'de> for EnvString {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
     fn test_literal_string() {
@@ -102,16 +102,20 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_env_var_resolution() {
-        env::set_var("TEST_TOKEN_VAR", "secret-value");
+        // SAFETY: test-only, serialized execution prevents concurrent env mutation
+        unsafe { env::set_var("TEST_TOKEN_VAR", "secret-value") };
         let env_str = EnvString::new("${TEST_TOKEN_VAR}".to_string());
         assert_eq!(env_str.resolve().unwrap(), "secret-value");
-        env::remove_var("TEST_TOKEN_VAR");
+        unsafe { env::remove_var("TEST_TOKEN_VAR") };
     }
 
     #[test]
+    #[serial]
     fn test_missing_env_var() {
-        env::remove_var("MISSING_VAR");
+        // SAFETY: test-only, serialized execution prevents concurrent env mutation
+        unsafe { env::remove_var("MISSING_VAR") };
         let env_str = EnvString::new("${MISSING_VAR}".to_string());
         assert!(env_str.resolve().is_err());
     }
@@ -133,7 +137,7 @@ mod tests {
             token: EnvString,
         }
 
-        let config: TestConfig = serde_yaml::from_str(yaml).unwrap();
+        let config: TestConfig = serde_yml::from_str(yaml).unwrap();
         assert_eq!(config.token.raw(), "${GITHUB_TOKEN}");
     }
 }
@@ -205,9 +209,9 @@ pub struct RepoConfig {
 impl RangerConfig {
     /// Load configuration from a YAML file
     pub fn load_from_file(path: &std::path::Path) -> Result<Self, ConfigLoadError> {
-        let content = std::fs::read_to_string(path).map_err(|e| ConfigLoadError::IoError(e))?;
+        let content = std::fs::read_to_string(path).map_err(ConfigLoadError::IoError)?;
 
-        let config: RangerConfig = serde_yaml::from_str(&content)
+        let config: RangerConfig = serde_yml::from_str(&content)
             .map_err(|e| ConfigLoadError::ParseError(e.to_string()))?;
 
         Ok(config)
@@ -218,19 +222,6 @@ impl RangerConfig {
         &self.repos
     }
 
-    /// Validate that required environment variables for providers are set
-    #[allow(dead_code)]
-    pub fn validate_providers(&self) -> Result<(), EnvResolutionError> {
-        if let Some(ref gitlab) = self.providers.gitlab {
-            gitlab.token.resolve()?;
-        }
-
-        if let Some(ref github) = self.providers.github {
-            github.token.resolve()?;
-        }
-
-        Ok(())
-    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -271,7 +262,7 @@ repos:
   - url: "https://gitlab.example.com/user/project.git"
 "#;
 
-        let config: RangerConfig = serde_yaml::from_str(yaml).unwrap();
+        let config: RangerConfig = serde_yml::from_str(yaml).unwrap();
 
         assert!(config.providers.gitlab.is_some());
         assert!(config.providers.github.is_some());
@@ -287,7 +278,7 @@ repos:
   - url: "https://github.com/example/test.git"
 "#;
 
-        let config: RangerConfig = serde_yaml::from_str(yaml).unwrap();
+        let config: RangerConfig = serde_yml::from_str(yaml).unwrap();
 
         assert!(config.providers.gitlab.is_none());
         assert!(config.providers.github.is_none());
@@ -304,9 +295,9 @@ groups:
       local_dir: "test"
 "#;
 
-        let config: RangerConfig = serde_yaml::from_str(yaml).unwrap();
+        let config: RangerConfig = serde_yml::from_str(yaml).unwrap();
 
-        assert_eq!(config.groups.gitlab[0].recursive, false);
+        assert!(!config.groups.gitlab[0].recursive);
     }
 
     #[test]
@@ -316,7 +307,7 @@ repos:
   - url: "https://github.com/example/test.git"
 "#;
 
-        let config: RangerConfig = serde_yaml::from_str(yaml).unwrap();
+        let config: RangerConfig = serde_yml::from_str(yaml).unwrap();
 
         assert!(config.repos[0].local_dir.is_none());
     }

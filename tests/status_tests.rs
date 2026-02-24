@@ -1,4 +1,5 @@
 use assert_fs::TempDir;
+use git_ranger::commands::common::CommonError;
 use git_ranger::commands::status::{status_command, StatusError, StatusOptions};
 use std::fs;
 use std::path::PathBuf;
@@ -41,7 +42,7 @@ repos:
 
         assert!(result.is_err());
         match result {
-            Err(StatusError::ConfigNotFound(_)) => {
+            Err(StatusError::Common(CommonError::ConfigNotFound(_))) => {
                 // Expected error
             }
             _ => panic!("Expected ConfigNotFound error"),

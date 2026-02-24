@@ -1,4 +1,5 @@
 use assert_fs::TempDir;
+use git_ranger::commands::common::CommonError;
 use git_ranger::commands::sync::{sync_command, SyncError, SyncOptions};
 use std::fs;
 use std::path::PathBuf;
@@ -42,7 +43,7 @@ repos:
 
         assert!(result.is_err());
         match result {
-            Err(SyncError::ConfigNotFound(_)) => {
+            Err(SyncError::Common(CommonError::ConfigNotFound(_))) => {
                 // Expected error
             }
             _ => panic!("Expected ConfigNotFound error"),
@@ -119,7 +120,7 @@ repos:
 
         assert!(result.is_err());
         match result {
-            Err(SyncError::ConfigParseError(_)) => {
+            Err(SyncError::Common(CommonError::ConfigParseError(_))) => {
                 // Expected error
             }
             _ => panic!("Expected ConfigParseError"),
@@ -213,7 +214,11 @@ mod sync_integration_tests {
         if path.ends_with("deps") {
             path.pop();
         }
-        path.push("git-ranger.exe");
+        if cfg!(windows) {
+            path.push("git-ranger.exe");
+        } else {
+            path.push("git-ranger");
+        }
         path
     }
 
