@@ -1,4 +1,5 @@
-use crate::config::{ConfigLoadError, RangerConfig, RepoConfig};
+use crate::commands::common::{self, CommonError};
+use crate::config::{RangerConfig, RepoConfig};
 use crate::progress::ProgressTracker;
 use crate::providers::gitlab::{GitLabClient, GitLabError};
 use std::path::{Path, PathBuf};
@@ -9,14 +10,8 @@ const SUCCESS_MARK: &str = "✓";
 
 #[derive(Error, Debug)]
 pub enum SyncError {
-    #[error("Configuration file not found at {0}")]
-    ConfigNotFound(String),
-
-    #[error("Failed to parse configuration: {0}")]
-    ConfigParseError(String),
-
-    #[error("Failed to load configuration: {0}")]
-    ConfigLoadError(#[from] ConfigLoadError),
+    #[error("{0}")]
+    Common(#[from] CommonError),
 
     #[error("IO error: {0}")]
     IoError(#[from] std::io::Error),
@@ -42,12 +37,11 @@ pub struct SyncReport {
     pub repos_to_fetch: usize,
     pub repos_cloned: usize,
     pub repos_fetched: usize,
-    #[allow(dead_code)]
-    pub repos_skipped: usize,
     pub errors: Vec<String>,
 }
 
 impl SyncReport {
+    #[must_use]
     pub fn new() -> Self {
         Self::default()
     }
@@ -63,7 +57,7 @@ struct RepoSyncInfo {
 }
 
 pub fn sync_command(options: &SyncOptions) -> Result<SyncReport, SyncError> {
-    let config = load_config(&options.config_path)?;
+    let config = common::load_config(&options.config_path)?;
     let base_dir = options
         .config_path
         .parent()
@@ -78,7 +72,7 @@ pub fn sync_command(options: &SyncOptions) -> Result<SyncReport, SyncError> {
 
     // Show discovery spinner
     let discovery_spinner = progress.create_spinner("Discovering repositories...");
-    let repos_to_sync = discover_repos(&config, base_dir, &options.target)?;
+    let repos_to_sync = discover_repos(&config, base_dir, options.target.as_deref())?;
     progress.finish_spinner(
         discovery_spinner,
         &format!(
@@ -101,27 +95,16 @@ pub fn sync_command(options: &SyncOptions) -> Result<SyncReport, SyncError> {
     Ok(report)
 }
 
-fn load_config(config_path: &Path) -> Result<RangerConfig, SyncError> {
-    if !config_path.exists() {
-        return Err(SyncError::ConfigNotFound(config_path.display().to_string()));
-    }
-
-    RangerConfig::load_from_file(config_path).map_err(|e| match e {
-        ConfigLoadError::ParseError(msg) => SyncError::ConfigParseError(msg),
-        other => SyncError::ConfigLoadError(other),
-    })
-}
-
 fn discover_repos(
     config: &RangerConfig,
     base_dir: &Path,
-    target: &Option<String>,
+    target: Option<&str>,
 ) -> Result<Vec<RepoSyncInfo>, SyncError> {
     let mut repos = Vec::new();
 
     // Add standalone repos
     for repo_config in config.get_standalone_repos() {
-        if should_sync_repo(&repo_config, target) {
+        if should_sync_repo(repo_config, target) {
             repos.push(analyze_repo(repo_config, base_dir)?);
         }
     }
@@ -137,14 +120,14 @@ fn discover_repos(
 fn discover_gitlab_repos(
     config: &RangerConfig,
     base_dir: &Path,
-    target: &Option<String>,
+    target: Option<&str>,
 ) -> Result<Option<Vec<RepoSyncInfo>>, SyncError> {
     let gitlab_provider = match &config.providers.gitlab {
         Some(provider) => provider,
         None => return Ok(None),
     };
 
-    let token = match gitlab_provider.token.resolve() {
+    let token: String = match gitlab_provider.token.resolve() {
         Ok(t) => t,
         Err(e) => {
             eprintln!("Warning: Failed to resolve GitLab token: {}", e);
@@ -169,7 +152,7 @@ fn discover_gitlab_repos(
     let mut repos = Vec::new();
 
     for group_config in &config.groups.gitlab {
-        if let Some(ref target_filter) = target {
+        if let Some(target_filter) = target {
             if !group_config.name.contains(target_filter) {
                 continue;
             }
@@ -188,7 +171,7 @@ fn discover_gitlab_repos(
                     let repo_config = convert_gitlab_project_to_repo_config(
                         &project,
                         &group_config.name,
-                        &group_config.local_dir,
+                        group_config.local_dir.as_deref(),
                     );
                     repos.push(analyze_repo(&repo_config, base_dir)?);
                 }
@@ -208,7 +191,7 @@ fn discover_gitlab_repos(
 fn convert_gitlab_project_to_repo_config(
     project: &crate::providers::gitlab::GitLabProject,
     group_name: &str,
-    base_local_dir: &Option<String>,
+    base_local_dir: Option<&str>,
 ) -> RepoConfig {
     let relative_path = if let Some(suffix) = project
         .path_with_namespace
@@ -222,11 +205,9 @@ fn convert_gitlab_project_to_repo_config(
     };
 
     let local_dir = if let Some(subpath) = relative_path {
-        base_local_dir
-            .as_ref()
-            .map(|base| format!("{}/{}", base, subpath))
+        base_local_dir.map(|base| format!("{}/{}", base, subpath))
     } else {
-        base_local_dir.clone()
+        base_local_dir.map(String::from)
     };
 
     RepoConfig {
@@ -285,27 +266,16 @@ fn execute_sync(repos: Vec<RepoSyncInfo>, report: &mut SyncReport, progress: &mu
     progress.finish_with_message(&format!("{} Sync complete", SUCCESS_MARK));
 }
 
-fn should_sync_repo(repo_config: &RepoConfig, target: &Option<String>) -> bool {
-    // If no target specified, sync all repos
-    if target.is_none() {
-        return true;
+fn should_sync_repo(repo_config: &RepoConfig, target: Option<&str>) -> bool {
+    match target {
+        Some(target_str) => repo_config.url.contains(target_str),
+        None => true,
     }
-
-    // Check if target matches the repo URL
-    let target_str = target.as_ref().unwrap();
-    repo_config.url.contains(target_str)
 }
 
 fn analyze_repo(repo_config: &RepoConfig, base_dir: &Path) -> Result<RepoSyncInfo, SyncError> {
-    // Extract repo name from URL
-    let name = extract_repo_name(&repo_config.url);
-
-    // Determine local path
-    let local_path = if let Some(ref local_dir) = repo_config.local_dir {
-        base_dir.join(local_dir).join(&name)
-    } else {
-        base_dir.join(&name)
-    };
+    let name = common::extract_repo_name(&repo_config.url);
+    let local_path = common::build_local_path(repo_config, base_dir, &name);
 
     // Check if repo already exists
     let exists = local_path.join(".git").exists();
@@ -316,14 +286,6 @@ fn analyze_repo(repo_config: &RepoConfig, base_dir: &Path) -> Result<RepoSyncInf
         local_path,
         exists,
     })
-}
-
-fn extract_repo_name(url: &str) -> String {
-    // Extract repo name from URL (last component without .git extension)
-    let parts: Vec<&str> = url.split('/').collect();
-    let last = parts.last().unwrap_or(&"unknown");
-
-    last.trim_end_matches(".git").to_string()
 }
 
 fn print_dry_run_report(report: &SyncReport, repos: &[RepoSyncInfo]) {
@@ -434,31 +396,13 @@ mod unit_tests {
     use super::*;
 
     #[test]
-    fn test_extract_repo_name_from_https_url() {
-        let url = "https://github.com/example/test-repo.git";
-        assert_eq!(extract_repo_name(url), "test-repo");
-    }
-
-    #[test]
-    fn test_extract_repo_name_from_ssh_url() {
-        let url = "git@github.com:example/test-repo.git";
-        assert_eq!(extract_repo_name(url), "test-repo");
-    }
-
-    #[test]
-    fn test_extract_repo_name_without_git_extension() {
-        let url = "https://github.com/example/test-repo";
-        assert_eq!(extract_repo_name(url), "test-repo");
-    }
-
-    #[test]
     fn test_should_sync_repo_all() {
         let repo = RepoConfig {
             url: "https://github.com/example/test.git".to_string(),
             local_dir: None,
         };
 
-        assert!(should_sync_repo(&repo, &None));
+        assert!(should_sync_repo(&repo, None));
     }
 
     #[test]
@@ -468,7 +412,7 @@ mod unit_tests {
             local_dir: None,
         };
 
-        assert!(should_sync_repo(&repo, &Some("example".to_string())));
+        assert!(should_sync_repo(&repo, Some("example")));
     }
 
     #[test]
@@ -478,7 +422,7 @@ mod unit_tests {
             local_dir: None,
         };
 
-        assert!(!should_sync_repo(&repo, &Some("other".to_string())));
+        assert!(!should_sync_repo(&repo, Some("other")));
     }
 
     #[test]

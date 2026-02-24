@@ -41,6 +41,10 @@ enum Commands {
     Ls,
 }
 
+fn default_config_path() -> PathBuf {
+    PathBuf::from(".").join("ranger.yaml")
+}
+
 fn main() {
     let cli = Cli::parse();
 
@@ -66,7 +70,7 @@ fn main() {
             }
         }
         Commands::Sync { target, dry_run } => {
-            let config_path = PathBuf::from(".").join("ranger.yaml");
+            let config_path = default_config_path();
 
             let options = commands::sync::SyncOptions {
                 config_path,
@@ -89,7 +93,7 @@ fn main() {
             }
         }
         Commands::Status => {
-            let config_path = PathBuf::from(".").join("ranger.yaml");
+            let config_path = default_config_path();
 
             let options = commands::status::StatusOptions { config_path };
 
@@ -102,7 +106,7 @@ fn main() {
             }
         }
         Commands::Ls => {
-            let config_path = PathBuf::from(".").join("ranger.yaml");
+            let config_path = default_config_path();
 
             let options = commands::ls::LsOptions { config_path };
 

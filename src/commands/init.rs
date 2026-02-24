@@ -98,13 +98,13 @@ mod unit_tests {
 
     #[test]
     fn test_default_config_is_valid_yaml() {
-        let parsed: Result<serde_yaml::Value, _> = serde_yaml::from_str(DEFAULT_CONFIG_TEMPLATE);
+        let parsed: Result<serde_yml::Value, _> = serde_yml::from_str(DEFAULT_CONFIG_TEMPLATE);
         assert!(parsed.is_ok(), "Default template must be valid YAML");
     }
 
     #[test]
     fn test_default_config_has_required_sections() {
-        let parsed: serde_yaml::Value = serde_yaml::from_str(DEFAULT_CONFIG_TEMPLATE).unwrap();
+        let parsed: serde_yml::Value = serde_yml::from_str(DEFAULT_CONFIG_TEMPLATE).unwrap();
 
         assert!(parsed.get("providers").is_some());
         assert!(parsed.get("groups").is_some());

@@ -38,7 +38,7 @@ mod init_unit_tests {
         let config_path = init_command(temp_dir.path()).unwrap();
 
         let content = std::fs::read_to_string(&config_path).unwrap();
-        let parsed: Result<serde_yaml::Value, _> = serde_yaml::from_str(&content);
+        let parsed: Result<serde_yml::Value, _> = serde_yml::from_str(&content);
 
         assert!(parsed.is_ok(), "Generated YAML should be valid");
     }
@@ -126,7 +126,11 @@ mod init_integration_tests {
         if path.ends_with("deps") {
             path.pop();
         }
-        path.push("git-ranger.exe");
+        if cfg!(windows) {
+            path.push("git-ranger.exe");
+        } else {
+            path.push("git-ranger");
+        }
         path
     }
 
@@ -179,7 +183,7 @@ mod init_integration_tests {
             .expect("Failed to execute command");
 
         let content = std::fs::read_to_string(&config_path).unwrap();
-        let parsed: Result<serde_yaml::Value, _> = serde_yaml::from_str(&content);
+        let parsed: Result<serde_yml::Value, _> = serde_yml::from_str(&content);
 
         assert!(parsed.is_ok(), "Generated YAML should be valid");
     }

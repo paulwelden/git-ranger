@@ -72,7 +72,7 @@ providers:
     token: "${GITLAB_TOKEN}"
 "#;
 
-    let config: TestConfig = serde_yaml::from_str(yaml).expect("Should parse YAML");
+    let config: TestConfig = serde_yml::from_str(yaml).expect("Should parse YAML");
     assert_eq!(config.providers.gitlab.token.raw(), "${GITLAB_TOKEN}");
 }
 
@@ -114,7 +114,7 @@ providers:
         env::set_var("GITLAB_TOKEN", "gitlab-secret-token");
     }
 
-    let config: Config = serde_yaml::from_str(yaml).expect("Should parse YAML");
+    let config: Config = serde_yml::from_str(yaml).expect("Should parse YAML");
 
     // Verify GitLab token resolves from env
     assert_eq!(
