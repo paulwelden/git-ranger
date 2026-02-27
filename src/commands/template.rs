@@ -61,97 +61,111 @@ mod unit_tests {
     use serial_test::serial;
     use std::env;
 
-    fn with_temp_config_dir(test: impl FnOnce(&Path)) {
-        let temp = assert_fs::TempDir::new().unwrap();
-        let config_path = temp.path().join("config");
-        env::set_var("GIT_RANGER_CONFIG_DIR", &config_path);
-        test(&config_path);
-        env::remove_var("GIT_RANGER_CONFIG_DIR");
+    /// Guard that sets `GIT_RANGER_CONFIG_DIR` on creation and removes it on drop,
+    /// ensuring cleanup even if the test panics.
+    struct ConfigDirGuard {
+        _temp: assert_fs::TempDir,
+        config_path: PathBuf,
+    }
+
+    impl ConfigDirGuard {
+        fn new() -> Self {
+            let temp = assert_fs::TempDir::new().unwrap();
+            let config_path = temp.path().join("config");
+            env::set_var("GIT_RANGER_CONFIG_DIR", &config_path);
+            Self {
+                _temp: temp,
+                config_path,
+            }
+        }
+
+        fn path(&self) -> &Path {
+            &self.config_path
+        }
+    }
+
+    impl Drop for ConfigDirGuard {
+        fn drop(&mut self) {
+            env::remove_var("GIT_RANGER_CONFIG_DIR");
+        }
     }
 
     #[test]
     #[serial]
     fn test_config_dir_uses_env_var() {
-        with_temp_config_dir(|config_path| {
-            let result = config_dir();
-            assert_eq!(result, Some(config_path.to_path_buf()));
-        });
+        let guard = ConfigDirGuard::new();
+        let result = config_dir();
+        assert_eq!(result, Some(guard.path().to_path_buf()));
     }
 
     #[test]
     #[serial]
     fn test_template_path_returns_full_path() {
-        with_temp_config_dir(|config_path| {
-            let result = template_path();
-            assert_eq!(result, Some(config_path.join(TEMPLATE_FILENAME)));
-        });
+        let guard = ConfigDirGuard::new();
+        let result = template_path();
+        assert_eq!(result, Some(guard.path().join(TEMPLATE_FILENAME)));
     }
 
     #[test]
     #[serial]
     fn test_load_saved_template_returns_none_when_missing() {
-        with_temp_config_dir(|_| {
-            let result = load_saved_template();
-            assert!(result.is_none());
-        });
+        let _guard = ConfigDirGuard::new();
+        let result = load_saved_template();
+        assert!(result.is_none());
     }
 
     #[test]
     #[serial]
     fn test_load_saved_template_returns_content() {
-        with_temp_config_dir(|config_path| {
-            std::fs::create_dir_all(config_path).unwrap();
-            std::fs::write(config_path.join(TEMPLATE_FILENAME), "test: content").unwrap();
+        let guard = ConfigDirGuard::new();
+        std::fs::create_dir_all(guard.path()).unwrap();
+        std::fs::write(guard.path().join(TEMPLATE_FILENAME), "test: content").unwrap();
 
-            let result = load_saved_template();
-            assert_eq!(result, Some("test: content".to_string()));
-        });
+        let result = load_saved_template();
+        assert_eq!(result, Some("test: content".to_string()));
     }
 
     #[test]
     #[serial]
     fn test_save_template_fails_when_no_ranger_yaml() {
-        with_temp_config_dir(|_| {
-            let temp = assert_fs::TempDir::new().unwrap();
-            let result = save_template(temp.path());
-            assert!(result.is_err());
-            assert!(matches!(
-                result.unwrap_err(),
-                TemplateError::ConfigNotFound(_)
-            ));
-        });
+        let _guard = ConfigDirGuard::new();
+        let temp = assert_fs::TempDir::new().unwrap();
+        let result = save_template(temp.path());
+        assert!(result.is_err());
+        assert!(matches!(
+            result.unwrap_err(),
+            TemplateError::ConfigNotFound(_)
+        ));
     }
 
     #[test]
     #[serial]
     fn test_save_template_copies_ranger_yaml() {
-        with_temp_config_dir(|config_path| {
-            let temp = assert_fs::TempDir::new().unwrap();
-            let source = temp.path().join("ranger.yaml");
-            std::fs::write(&source, "providers:\n  gitlab:\n    host: test").unwrap();
+        let guard = ConfigDirGuard::new();
+        let temp = assert_fs::TempDir::new().unwrap();
+        let source = temp.path().join("ranger.yaml");
+        std::fs::write(&source, "providers:\n  gitlab:\n    host: test").unwrap();
 
-            let result = save_template(temp.path());
-            assert!(result.is_ok());
+        let result = save_template(temp.path());
+        assert!(result.is_ok());
 
-            let dest = result.unwrap();
-            assert_eq!(dest, config_path.join(TEMPLATE_FILENAME));
+        let dest = result.unwrap();
+        assert_eq!(dest, guard.path().join(TEMPLATE_FILENAME));
 
-            let saved_content = std::fs::read_to_string(&dest).unwrap();
-            assert_eq!(saved_content, "providers:\n  gitlab:\n    host: test");
-        });
+        let saved_content = std::fs::read_to_string(&dest).unwrap();
+        assert_eq!(saved_content, "providers:\n  gitlab:\n    host: test");
     }
 
     #[test]
     #[serial]
     fn test_save_template_creates_config_dir() {
-        with_temp_config_dir(|config_path| {
-            assert!(!config_path.exists());
+        let guard = ConfigDirGuard::new();
+        assert!(!guard.path().exists());
 
-            let temp = assert_fs::TempDir::new().unwrap();
-            std::fs::write(temp.path().join("ranger.yaml"), "test: data").unwrap();
+        let temp = assert_fs::TempDir::new().unwrap();
+        std::fs::write(temp.path().join("ranger.yaml"), "test: data").unwrap();
 
-            save_template(temp.path()).unwrap();
-            assert!(config_path.exists());
-        });
+        save_template(temp.path()).unwrap();
+        assert!(guard.path().exists());
     }
 }

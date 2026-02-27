@@ -6,18 +6,28 @@ use serial_test::serial;
 mod init_unit_tests {
     use super::*;
 
-    /// Point GIT_RANGER_CONFIG_DIR at an empty temp dir so tests never pick up
-    /// a saved template from the real user config directory.
-    fn isolate_config() -> TempDir {
-        let dir = TempDir::new().unwrap();
-        std::env::set_var("GIT_RANGER_CONFIG_DIR", dir.path());
-        dir
+    /// Guard that sets GIT_RANGER_CONFIG_DIR on creation and removes it on drop,
+    /// ensuring cleanup even if the test panics.
+    struct ConfigGuard(#[allow(dead_code)] TempDir);
+
+    impl ConfigGuard {
+        fn new() -> Self {
+            let dir = TempDir::new().unwrap();
+            std::env::set_var("GIT_RANGER_CONFIG_DIR", dir.path());
+            Self(dir)
+        }
+    }
+
+    impl Drop for ConfigGuard {
+        fn drop(&mut self) {
+            std::env::remove_var("GIT_RANGER_CONFIG_DIR");
+        }
     }
 
     #[test]
     #[serial]
     fn test_init_creates_ranger_yaml_in_current_directory() {
-        let _cfg = isolate_config();
+        let _cfg = ConfigGuard::new();
         let temp_dir = TempDir::new().unwrap();
 
         let result = init_command(temp_dir.path());
@@ -31,7 +41,7 @@ mod init_unit_tests {
     #[test]
     #[serial]
     fn test_init_creates_valid_yaml_structure() {
-        let _cfg = isolate_config();
+        let _cfg = ConfigGuard::new();
         let temp_dir = TempDir::new().unwrap();
 
         let (config_path, _source) = init_command(temp_dir.path()).unwrap();
@@ -47,7 +57,7 @@ mod init_unit_tests {
     #[test]
     #[serial]
     fn test_init_creates_parseable_yaml() {
-        let _cfg = isolate_config();
+        let _cfg = ConfigGuard::new();
         let temp_dir = TempDir::new().unwrap();
 
         let (config_path, _source) = init_command(temp_dir.path()).unwrap();
@@ -61,7 +71,7 @@ mod init_unit_tests {
     #[test]
     #[serial]
     fn test_init_fails_if_config_already_exists() {
-        let _cfg = isolate_config();
+        let _cfg = ConfigGuard::new();
         let temp_dir = TempDir::new().unwrap();
 
         // Create initial config
@@ -82,7 +92,7 @@ mod init_unit_tests {
     #[test]
     #[serial]
     fn test_init_includes_example_gitlab_provider() {
-        let _cfg = isolate_config();
+        let _cfg = ConfigGuard::new();
         let temp_dir = TempDir::new().unwrap();
 
         let (config_path, _source) = init_command(temp_dir.path()).unwrap();
@@ -97,7 +107,7 @@ mod init_unit_tests {
     #[test]
     #[serial]
     fn test_init_includes_example_group_with_recursive() {
-        let _cfg = isolate_config();
+        let _cfg = ConfigGuard::new();
         let temp_dir = TempDir::new().unwrap();
 
         let (config_path, _source) = init_command(temp_dir.path()).unwrap();
@@ -111,7 +121,7 @@ mod init_unit_tests {
     #[test]
     #[serial]
     fn test_init_includes_example_standalone_repo() {
-        let _cfg = isolate_config();
+        let _cfg = ConfigGuard::new();
         let temp_dir = TempDir::new().unwrap();
 
         let (config_path, _source) = init_command(temp_dir.path()).unwrap();
@@ -125,7 +135,7 @@ mod init_unit_tests {
     #[test]
     #[serial]
     fn test_init_creates_file_with_comments() {
-        let _cfg = isolate_config();
+        let _cfg = ConfigGuard::new();
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("ranger.yaml");
 
