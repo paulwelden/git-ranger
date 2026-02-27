@@ -1,27 +1,40 @@
 use assert_fs::TempDir;
 use git_ranger::commands::init::{init_command, InitError};
+use serial_test::serial;
 
 // Unit-style tests that test the init function directly
 mod init_unit_tests {
     use super::*;
 
+    /// Point GIT_RANGER_CONFIG_DIR at an empty temp dir so tests never pick up
+    /// a saved template from the real user config directory.
+    fn isolate_config() -> TempDir {
+        let dir = TempDir::new().unwrap();
+        std::env::set_var("GIT_RANGER_CONFIG_DIR", dir.path());
+        dir
+    }
+
     #[test]
+    #[serial]
     fn test_init_creates_ranger_yaml_in_current_directory() {
+        let _cfg = isolate_config();
         let temp_dir = TempDir::new().unwrap();
 
         let result = init_command(temp_dir.path());
 
         assert!(result.is_ok());
-        let config_path = result.unwrap();
+        let (config_path, _source) = result.unwrap();
         assert!(config_path.exists());
         assert_eq!(config_path.file_name().unwrap(), "ranger.yaml");
     }
 
     #[test]
+    #[serial]
     fn test_init_creates_valid_yaml_structure() {
+        let _cfg = isolate_config();
         let temp_dir = TempDir::new().unwrap();
 
-        let config_path = init_command(temp_dir.path()).unwrap();
+        let (config_path, _source) = init_command(temp_dir.path()).unwrap();
 
         let content = std::fs::read_to_string(&config_path).unwrap();
 
@@ -32,10 +45,12 @@ mod init_unit_tests {
     }
 
     #[test]
+    #[serial]
     fn test_init_creates_parseable_yaml() {
+        let _cfg = isolate_config();
         let temp_dir = TempDir::new().unwrap();
 
-        let config_path = init_command(temp_dir.path()).unwrap();
+        let (config_path, _source) = init_command(temp_dir.path()).unwrap();
 
         let content = std::fs::read_to_string(&config_path).unwrap();
         let parsed: Result<serde_yml::Value, _> = serde_yml::from_str(&content);
@@ -44,7 +59,9 @@ mod init_unit_tests {
     }
 
     #[test]
+    #[serial]
     fn test_init_fails_if_config_already_exists() {
+        let _cfg = isolate_config();
         let temp_dir = TempDir::new().unwrap();
 
         // Create initial config
@@ -63,10 +80,12 @@ mod init_unit_tests {
     }
 
     #[test]
+    #[serial]
     fn test_init_includes_example_gitlab_provider() {
+        let _cfg = isolate_config();
         let temp_dir = TempDir::new().unwrap();
 
-        let config_path = init_command(temp_dir.path()).unwrap();
+        let (config_path, _source) = init_command(temp_dir.path()).unwrap();
 
         let content = std::fs::read_to_string(&config_path).unwrap();
 
@@ -76,10 +95,12 @@ mod init_unit_tests {
     }
 
     #[test]
+    #[serial]
     fn test_init_includes_example_group_with_recursive() {
+        let _cfg = isolate_config();
         let temp_dir = TempDir::new().unwrap();
 
-        let config_path = init_command(temp_dir.path()).unwrap();
+        let (config_path, _source) = init_command(temp_dir.path()).unwrap();
 
         let content = std::fs::read_to_string(&config_path).unwrap();
 
@@ -88,10 +109,12 @@ mod init_unit_tests {
     }
 
     #[test]
+    #[serial]
     fn test_init_includes_example_standalone_repo() {
+        let _cfg = isolate_config();
         let temp_dir = TempDir::new().unwrap();
 
-        let config_path = init_command(temp_dir.path()).unwrap();
+        let (config_path, _source) = init_command(temp_dir.path()).unwrap();
 
         let content = std::fs::read_to_string(&config_path).unwrap();
 
@@ -100,7 +123,9 @@ mod init_unit_tests {
     }
 
     #[test]
+    #[serial]
     fn test_init_creates_file_with_comments() {
+        let _cfg = isolate_config();
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("ranger.yaml");
 
@@ -113,25 +138,34 @@ mod init_unit_tests {
     }
 }
 
+fn get_binary_path() -> std::path::PathBuf {
+    let mut path = std::env::current_exe().unwrap();
+    path.pop();
+    if path.ends_with("deps") {
+        path.pop();
+    }
+    if cfg!(windows) {
+        path.push("git-ranger.exe");
+    } else {
+        path.push("git-ranger");
+    }
+    path
+}
+
 // Integration tests that test through the CLI
 mod init_integration_tests {
     use super::*;
-    use std::path::PathBuf;
     use std::process::Command;
 
-    fn get_binary_path() -> PathBuf {
-        // Get the path to the compiled binary
-        let mut path = std::env::current_exe().unwrap();
-        path.pop(); // Remove test executable name
-        if path.ends_with("deps") {
-            path.pop();
-        }
-        if cfg!(windows) {
-            path.push("git-ranger.exe");
-        } else {
-            path.push("git-ranger");
-        }
-        path
+    /// Creates an isolated config dir and returns a Command builder with it set.
+    fn init_cmd(target: &std::path::Path) -> (TempDir, Command) {
+        let cfg_dir = TempDir::new().unwrap();
+        let mut cmd = Command::new(get_binary_path());
+        cmd.arg("init")
+            .arg("--dir")
+            .arg(target)
+            .env("GIT_RANGER_CONFIG_DIR", cfg_dir.path());
+        (cfg_dir, cmd)
     }
 
     #[test]
@@ -139,12 +173,8 @@ mod init_integration_tests {
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("ranger.yaml");
 
-        let output = Command::new(get_binary_path())
-            .arg("init")
-            .arg("--dir")
-            .arg(temp_dir.path())
-            .output()
-            .expect("Failed to execute command");
+        let (_cfg, mut cmd) = init_cmd(temp_dir.path());
+        let output = cmd.output().expect("Failed to execute command");
 
         assert!(output.status.success());
         assert!(config_path.exists());
@@ -155,16 +185,11 @@ mod init_integration_tests {
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("ranger.yaml");
 
-        Command::new(get_binary_path())
-            .arg("init")
-            .arg("--dir")
-            .arg(temp_dir.path())
-            .output()
-            .expect("Failed to execute command");
+        let (_cfg, mut cmd) = init_cmd(temp_dir.path());
+        cmd.output().expect("Failed to execute command");
 
         let content = std::fs::read_to_string(&config_path).unwrap();
 
-        // Should contain main sections
         assert!(content.contains("providers:"));
         assert!(content.contains("groups:"));
         assert!(content.contains("repos:"));
@@ -175,12 +200,8 @@ mod init_integration_tests {
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("ranger.yaml");
 
-        Command::new(get_binary_path())
-            .arg("init")
-            .arg("--dir")
-            .arg(temp_dir.path())
-            .output()
-            .expect("Failed to execute command");
+        let (_cfg, mut cmd) = init_cmd(temp_dir.path());
+        cmd.output().expect("Failed to execute command");
 
         let content = std::fs::read_to_string(&config_path).unwrap();
         let parsed: Result<serde_yml::Value, _> = serde_yml::from_str(&content);
@@ -191,22 +212,23 @@ mod init_integration_tests {
     #[test]
     fn test_init_fails_if_config_already_exists() {
         let temp_dir = TempDir::new().unwrap();
+        let cfg_dir = TempDir::new().unwrap();
 
-        // Create initial config
         let output1 = Command::new(get_binary_path())
             .arg("init")
             .arg("--dir")
             .arg(temp_dir.path())
+            .env("GIT_RANGER_CONFIG_DIR", cfg_dir.path())
             .output()
             .expect("Failed to execute command");
 
         assert!(output1.status.success());
 
-        // Try to init again
         let output2 = Command::new(get_binary_path())
             .arg("init")
             .arg("--dir")
             .arg(temp_dir.path())
+            .env("GIT_RANGER_CONFIG_DIR", cfg_dir.path())
             .output()
             .expect("Failed to execute command");
 
@@ -220,12 +242,8 @@ mod init_integration_tests {
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("ranger.yaml");
 
-        Command::new(get_binary_path())
-            .arg("init")
-            .arg("--dir")
-            .arg(temp_dir.path())
-            .output()
-            .expect("Failed to execute command");
+        let (_cfg, mut cmd) = init_cmd(temp_dir.path());
+        cmd.output().expect("Failed to execute command");
 
         let content = std::fs::read_to_string(&config_path).unwrap();
 
@@ -239,12 +257,8 @@ mod init_integration_tests {
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("ranger.yaml");
 
-        Command::new(get_binary_path())
-            .arg("init")
-            .arg("--dir")
-            .arg(temp_dir.path())
-            .output()
-            .expect("Failed to execute command");
+        let (_cfg, mut cmd) = init_cmd(temp_dir.path());
+        cmd.output().expect("Failed to execute command");
 
         let content = std::fs::read_to_string(&config_path).unwrap();
 
@@ -257,16 +271,11 @@ mod init_integration_tests {
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("ranger.yaml");
 
-        Command::new(get_binary_path())
-            .arg("init")
-            .arg("--dir")
-            .arg(temp_dir.path())
-            .output()
-            .expect("Failed to execute command");
+        let (_cfg, mut cmd) = init_cmd(temp_dir.path());
+        cmd.output().expect("Failed to execute command");
 
         let content = std::fs::read_to_string(&config_path).unwrap();
 
-        // Should have repos section with url example
         assert!(content.contains("- url:"));
     }
 
@@ -275,16 +284,11 @@ mod init_integration_tests {
         let temp_dir = TempDir::new().unwrap();
         let config_path = temp_dir.path().join("ranger.yaml");
 
-        Command::new(get_binary_path())
-            .arg("init")
-            .arg("--dir")
-            .arg(temp_dir.path())
-            .output()
-            .expect("Failed to execute command");
+        let (_cfg, mut cmd) = init_cmd(temp_dir.path());
+        cmd.output().expect("Failed to execute command");
 
         let content = std::fs::read_to_string(&config_path).unwrap();
 
-        // Should include helpful comments
         assert!(content.contains("#"));
     }
 }

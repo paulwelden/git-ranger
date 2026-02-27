@@ -22,6 +22,10 @@ enum Commands {
         /// Target directory for config file (defaults to current directory)
         #[arg(short, long, value_name = "DIR")]
         dir: Option<PathBuf>,
+
+        /// Save current ranger.yaml as the default template for future init calls
+        #[arg(long)]
+        save_template: bool,
     },
 
     /// Synchronize workspace: clone missing repos and fetch updates
@@ -49,23 +53,43 @@ fn main() {
     let cli = Cli::parse();
 
     let result = match cli.command {
-        Commands::Init { dir } => {
+        Commands::Init { dir, save_template } => {
             let target_dir = dir.unwrap_or_else(|| PathBuf::from("."));
 
-            match commands::init::init_command(&target_dir) {
-                Ok(config_path) => {
-                    println!(
-                        "✓ Initialized git-ranger configuration at {}",
-                        config_path.display()
-                    );
-                    println!("\nNext steps:");
-                    println!("  1. Edit ranger.yaml with your providers and repositories");
-                    println!("  2. Run 'git-ranger sync' to clone and sync everything");
-                    Ok(())
+            if save_template {
+                match commands::init::save_template_command(&target_dir) {
+                    Ok(path) => {
+                        println!(
+                            "Saved template to {}. Future `git-ranger init` will use this template.",
+                            path.display()
+                        );
+                        Ok(())
+                    }
+                    Err(e) => {
+                        eprintln!("Error: {}", e);
+                        Err(1)
+                    }
                 }
-                Err(e) => {
-                    eprintln!("Error: {}", e);
-                    Err(1)
+            } else {
+                match commands::init::init_command(&target_dir) {
+                    Ok((config_path, source)) => {
+                        if let commands::init::TemplateSource::SavedTemplate(ref tpl_path) = source
+                        {
+                            println!("Using saved template from {}", tpl_path.display());
+                        }
+                        println!(
+                            "✓ Initialized git-ranger configuration at {}",
+                            config_path.display()
+                        );
+                        println!("\nNext steps:");
+                        println!("  1. Edit ranger.yaml with your providers and repositories");
+                        println!("  2. Run 'git-ranger sync' to clone and sync everything");
+                        Ok(())
+                    }
+                    Err(e) => {
+                        eprintln!("Error: {}", e);
+                        Err(1)
+                    }
                 }
             }
         }
