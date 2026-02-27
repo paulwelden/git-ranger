@@ -1,6 +1,8 @@
 use std::path::{Path, PathBuf};
 use thiserror::Error;
 
+use super::template;
+
 #[derive(Error, Debug)]
 pub enum InitError {
     #[error("Configuration file already exists at {0}")]
@@ -8,6 +10,15 @@ pub enum InitError {
 
     #[error("Failed to write configuration file: {0}")]
     IoError(#[from] std::io::Error),
+
+    #[error("Template error: {0}")]
+    TemplateError(#[from] template::TemplateError),
+}
+
+#[derive(Debug, PartialEq)]
+pub enum TemplateSource {
+    Default,
+    SavedTemplate(PathBuf),
 }
 
 const DEFAULT_CONFIG_TEMPLATE: &str = r#"# Git Ranger Configuration
@@ -24,7 +35,7 @@ providers:
   gitlab:
     host: "https://gitlab.example.com"  # Your GitLab instance URL
     token: "${GITLAB_TOKEN}"            # Set via: export GITLAB_TOKEN="your-token-here"
-  
+
   # GitHub configuration (uncomment to use)
   # github:
   #   token: "${GITHUB_TOKEN}"          # Set via: export GITHUB_TOKEN="your-token-here"
@@ -36,7 +47,7 @@ groups:
     - name: "my-org/my-team"            # Group path on GitLab
       local_dir: "team-projects"        # Where to clone repos locally
       recursive: true                   # Include nested subgroups
-    
+
     # - name: "another-group"
     #   local_dir: "other-projects"
     #   recursive: false
@@ -51,7 +62,7 @@ repos:
   # Standalone repos not part of a group
   - url: "git@github.com:example/standalone-tool.git"
     local_dir: "standalone"
-  
+
   # - url: "https://gitlab.example.com/user/project.git"
   #   local_dir: "special-projects"
 
@@ -65,18 +76,18 @@ repos:
 #   Windows (PowerShell):
 #     $env:GITLAB_TOKEN = "your-token-here"
 #     $env:GITHUB_TOKEN = "your-token-here"
-#   
+#
 #   Linux/macOS (bash/zsh):
 #     export GITLAB_TOKEN="your-token-here"
 #     export GITHUB_TOKEN="your-token-here"
-#   
+#
 #   Or add to your shell profile (~/.bashrc, ~/.zshrc, or PowerShell profile)
 #   to persist across sessions.
 #
 # IMPORTANT: Add ranger.yaml to .gitignore to prevent accidental commits!
 "#;
 
-pub fn init_command(target_dir: &Path) -> Result<PathBuf, InitError> {
+pub fn init_command(target_dir: &Path) -> Result<(PathBuf, TemplateSource), InitError> {
     let config_path = target_dir.join("ranger.yaml");
 
     // Check if config already exists
@@ -86,10 +97,22 @@ pub fn init_command(target_dir: &Path) -> Result<PathBuf, InitError> {
         ));
     }
 
-    // Write the default configuration template
-    std::fs::write(&config_path, DEFAULT_CONFIG_TEMPLATE)?;
+    // Try to use a saved template, fall back to default
+    let (content, source) = match template::load_saved_template() {
+        Some(saved) => match template::template_path() {
+            Some(path) => (saved, TemplateSource::SavedTemplate(path)),
+            None => (DEFAULT_CONFIG_TEMPLATE.to_string(), TemplateSource::Default),
+        },
+        None => (DEFAULT_CONFIG_TEMPLATE.to_string(), TemplateSource::Default),
+    };
 
-    Ok(config_path)
+    std::fs::write(&config_path, content)?;
+
+    Ok((config_path, source))
+}
+
+pub fn save_template_command(target_dir: &Path) -> Result<PathBuf, InitError> {
+    Ok(template::save_template(target_dir)?)
 }
 
 #[cfg(test)]
