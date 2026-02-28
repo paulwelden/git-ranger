@@ -1,6 +1,6 @@
 [package]
 name = "git-ranger"
-version = "0.1.4"
+version = "0.1.5"
 edition = "2021"
 authors = ["Paul Welden"]
 description = "A command line tool that manages and synchronizes local Git repositories across multiple providers"
