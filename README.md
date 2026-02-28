@@ -229,6 +229,12 @@ Git Ranger follows git-style subcommands for a familiar experience:
 # Initialize a new ranger.yaml config in current directory
 git-ranger init
 
+# Save your configured ranger.yaml as the default template for future init calls
+git-ranger init --save-template
+
+# Initialize using your saved template (automatic if one exists)
+git-ranger init --dir ~/new-workspace
+
 # Synchronize workspace: clone missing repos and fetch updates for existing ones
 # Idempotent - safe to run daily or after config changes
 git-ranger sync
@@ -250,6 +256,14 @@ git-ranger sync --dry-run
 git-ranger init
 # Edit ranger.yaml with your providers and groups
 git-ranger sync  # Clone and sync everything
+
+# Save your customized config as a template for reuse
+git-ranger init --save-template
+
+# Set up a new workspace using your saved template
+mkdir ~/another-workspace && cd ~/another-workspace
+git-ranger init   # Automatically uses your saved template
+git-ranger sync
 
 # Daily workflow (idempotent - run anytime)
 git-ranger sync   # Clones any new repos, fetches updates for existing
