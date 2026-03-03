@@ -202,6 +202,26 @@ mod tests {
         let deserialized: EnvString = serde_yml::from_str(&serialized).unwrap();
         assert_eq!(deserialized, original);
     }
+
+    #[test]
+    fn test_deserialize_wrong_type_produces_expecting_message() {
+        // Deserializing a sequence where EnvString is expected triggers the
+        // expecting() formatter, whose message must appear in the error.
+        let yaml = "token: [1, 2, 3]";
+
+        #[derive(Debug, serde::Deserialize)]
+        struct TestConfig {
+            token: EnvString,
+        }
+
+        let err = serde_yml::from_str::<TestConfig>(yaml).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("a string or environment variable reference"),
+            "Error should contain expecting message, got: {}",
+            msg
+        );
+    }
 }
 
 /// Main configuration structure for ranger.yaml

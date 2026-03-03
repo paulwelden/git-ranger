@@ -71,6 +71,10 @@ coverage/
 lcov.info
 tarpaulin-report.html
 
+# Mutation testing
+mutants.out/
+mutants.out.old/
+
 # Dependency directories
 /vendor/
 

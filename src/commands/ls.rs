@@ -40,7 +40,8 @@ pub fn ls_command(options: &LsOptions) -> Result<Vec<RepoInfo>, LsError> {
     }
 
     // Print listing
-    print_repo_listing(&repos);
+    let stdout = std::io::stdout();
+    write_repo_listing(&repos, &mut stdout.lock());
 
     Ok(repos)
 }
@@ -56,23 +57,23 @@ fn build_repo_info(repo_config: &RepoConfig, base_dir: &Path) -> RepoInfo {
     }
 }
 
-fn print_repo_listing(repos: &[RepoInfo]) {
+fn write_repo_listing(repos: &[RepoInfo], w: &mut impl std::io::Write) {
     if repos.is_empty() {
-        println!("No repositories configured.");
+        writeln!(w, "No repositories configured.").ok();
         return;
     }
 
-    println!("\n=== Configured Repositories ===");
-    println!();
+    writeln!(w, "\n=== Configured Repositories ===").ok();
+    writeln!(w).ok();
 
     for repo in repos {
-        println!("{}", repo.name);
-        println!("  URL: {}", repo.url);
-        println!("  Local Path: {}", repo.local_path.display());
-        println!();
+        writeln!(w, "{}", repo.name).ok();
+        writeln!(w, "  URL: {}", repo.url).ok();
+        writeln!(w, "  Local Path: {}", repo.local_path.display()).ok();
+        writeln!(w).ok();
     }
 
-    println!("Total: {} repositories", repos.len());
+    writeln!(w, "Total: {} repositories", repos.len()).ok();
 }
 
 #[cfg(test)]
@@ -144,5 +145,38 @@ mod unit_tests {
         ));
         let msg = err.to_string();
         assert!(msg.contains("IO error"), "got: {}", msg);
+    }
+
+    #[test]
+    fn test_write_repo_listing_empty() {
+        let repos: Vec<RepoInfo> = vec![];
+        let mut buf = Vec::new();
+        write_repo_listing(&repos, &mut buf);
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("No repositories configured"), "got: {}", output);
+    }
+
+    #[test]
+    fn test_write_repo_listing_with_repos() {
+        let repos = vec![
+            RepoInfo {
+                name: "alpha".to_string(),
+                url: "https://github.com/org/alpha.git".to_string(),
+                local_path: PathBuf::from("/workspace/alpha"),
+            },
+            RepoInfo {
+                name: "beta".to_string(),
+                url: "git@github.com:org/beta.git".to_string(),
+                local_path: PathBuf::from("/workspace/beta"),
+            },
+        ];
+        let mut buf = Vec::new();
+        write_repo_listing(&repos, &mut buf);
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("Configured Repositories"), "got: {}", output);
+        assert!(output.contains("alpha"), "got: {}", output);
+        assert!(output.contains("https://github.com/org/alpha.git"), "got: {}", output);
+        assert!(output.contains("beta"), "got: {}", output);
+        assert!(output.contains("Total: 2 repositories"), "got: {}", output);
     }
 }
