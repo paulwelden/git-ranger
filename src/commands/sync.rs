@@ -85,12 +85,12 @@ pub fn sync_command(options: &SyncOptions) -> Result<SyncReport, SyncError> {
     let mut report = build_initial_report(&repos_to_sync);
 
     if options.dry_run {
-        print_dry_run_report(&report, &repos_to_sync);
+        write_dry_run_report(&report, &repos_to_sync, &mut std::io::stdout());
         return Ok(report);
     }
 
     execute_sync(repos_to_sync, &mut report, &mut progress);
-    print_sync_summary(&report);
+    write_sync_summary(&report, &mut std::io::stdout(), &mut std::io::stderr());
 
     Ok(report)
 }
@@ -288,39 +288,47 @@ fn analyze_repo(repo_config: &RepoConfig, base_dir: &Path) -> Result<RepoSyncInf
     })
 }
 
-fn print_dry_run_report(report: &SyncReport, repos: &[RepoSyncInfo]) {
-    println!("\n=== Dry Run Mode ===");
-    println!("Total repositories: {}", report.total_repos);
-    println!("Repos to clone: {}", report.repos_to_clone);
-    println!("Repos to fetch: {}", report.repos_to_fetch);
+fn write_dry_run_report(
+    report: &SyncReport,
+    repos: &[RepoSyncInfo],
+    w: &mut impl std::io::Write,
+) {
+    writeln!(w, "\n=== Dry Run Mode ===").ok();
+    writeln!(w, "Total repositories: {}", report.total_repos).ok();
+    writeln!(w, "Repos to clone: {}", report.repos_to_clone).ok();
+    writeln!(w, "Repos to fetch: {}", report.repos_to_fetch).ok();
 
     if report.repos_to_clone > 0 {
-        println!("\nWould clone:");
+        writeln!(w, "\nWould clone:").ok();
         for repo in repos.iter().filter(|r| !r.exists) {
-            println!("  - {} -> {}", repo.name, repo.local_path.display());
+            writeln!(w, "  - {} -> {}", repo.name, repo.local_path.display()).ok();
         }
     }
 
     if report.repos_to_fetch > 0 {
-        println!("\nWould fetch updates:");
+        writeln!(w, "\nWould fetch updates:").ok();
         for repo in repos.iter().filter(|r| r.exists) {
-            println!("  - {} ({})", repo.name, repo.local_path.display());
+            writeln!(w, "  - {} ({})", repo.name, repo.local_path.display()).ok();
         }
     }
 
-    println!("\nNo changes made. Run without --dry-run to execute.");
+    writeln!(w, "\nNo changes made. Run without --dry-run to execute.").ok();
 }
 
-fn print_sync_summary(report: &SyncReport) {
-    println!("\n=== Sync Summary ===");
-    println!("Total repositories: {}", report.total_repos);
-    println!("Cloned: {}", report.repos_cloned);
-    println!("Fetched: {}", report.repos_fetched);
+fn write_sync_summary(
+    report: &SyncReport,
+    w: &mut impl std::io::Write,
+    ew: &mut impl std::io::Write,
+) {
+    writeln!(w, "\n=== Sync Summary ===").ok();
+    writeln!(w, "Total repositories: {}", report.total_repos).ok();
+    writeln!(w, "Cloned: {}", report.repos_cloned).ok();
+    writeln!(w, "Fetched: {}", report.repos_fetched).ok();
 
     if !report.errors.is_empty() {
-        println!("Errors: {}", report.errors.len());
+        writeln!(w, "Errors: {}", report.errors.len()).ok();
         for error in &report.errors {
-            eprintln!("  - {}", error);
+            writeln!(ew, "  - {}", error).ok();
         }
     }
 }
@@ -736,5 +744,357 @@ mod unit_tests {
         let err = SyncError::GitLabError(inner);
         let msg = err.to_string();
         assert!(msg.contains("GitLab API error"), "got: {}", msg);
+    }
+
+    /// Helper: create a bare git repo in `dir` and return its path.
+    fn create_bare_repo(dir: &std::path::Path, name: &str) -> PathBuf {
+        let bare_path = dir.join(format!("{}.git", name));
+        std::process::Command::new("git")
+            .args(["init", "--bare"])
+            .arg(&bare_path)
+            .output()
+            .expect("git init --bare failed");
+        bare_path
+    }
+
+    #[test]
+    fn test_clone_repo_creates_local_directory() {
+        let temp = assert_fs::TempDir::new().unwrap();
+        let bare = create_bare_repo(temp.path(), "test-clone");
+
+        let repo = RepoSyncInfo {
+            url: bare.display().to_string(),
+            name: "test-clone".to_string(),
+            local_path: temp.path().join("cloned-repo"),
+            exists: false,
+        };
+        let progress = ProgressTracker::hidden();
+
+        let result = clone_repo(&repo, &progress);
+        assert!(result.is_ok(), "clone_repo should succeed: {:?}", result);
+        assert!(
+            repo.local_path.join(".git").exists(),
+            "Cloned repo should have .git directory"
+        );
+    }
+
+    #[test]
+    fn test_fetch_repo_picks_up_new_commits() {
+        let temp = assert_fs::TempDir::new().unwrap();
+        let bare = create_bare_repo(temp.path(), "test-fetch");
+
+        // Clone the bare repo first
+        let clone_path = temp.path().join("fetched-repo");
+        std::process::Command::new("git")
+            .args(["clone"])
+            .arg(&bare)
+            .arg(&clone_path)
+            .output()
+            .expect("git clone failed");
+
+        // Create a commit in a working copy and push to bare
+        let pusher = temp.path().join("pusher");
+        std::process::Command::new("git")
+            .args(["clone"])
+            .arg(&bare)
+            .arg(&pusher)
+            .output()
+            .expect("git clone for pusher failed");
+
+        // Configure git user for commit
+        std::process::Command::new("git")
+            .args(["-C"])
+            .arg(&pusher)
+            .args(["config", "user.email", "test@test.com"])
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["-C"])
+            .arg(&pusher)
+            .args(["config", "user.name", "Test"])
+            .output()
+            .unwrap();
+
+        // Create a file, commit, and push
+        std::fs::write(pusher.join("file.txt"), "content").unwrap();
+        std::process::Command::new("git")
+            .args(["-C"])
+            .arg(&pusher)
+            .args(["add", "file.txt"])
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["-C"])
+            .arg(&pusher)
+            .args(["commit", "-m", "add file"])
+            .output()
+            .unwrap();
+        std::process::Command::new("git")
+            .args(["-C"])
+            .arg(&pusher)
+            .args(["push"])
+            .output()
+            .unwrap();
+
+        // Record the remote HEAD before fetch
+        let before = std::process::Command::new("git")
+            .args(["-C"])
+            .arg(&clone_path)
+            .args(["rev-parse", "origin/master"])
+            .output();
+
+        let repo = RepoSyncInfo {
+            url: bare.display().to_string(),
+            name: "test-fetch".to_string(),
+            local_path: clone_path.clone(),
+            exists: true,
+        };
+        let progress = ProgressTracker::hidden();
+
+        let result = fetch_repo(&repo, &progress);
+        assert!(result.is_ok(), "fetch_repo should succeed: {:?}", result);
+
+        // After fetch, origin/master should point to the new commit
+        let after = std::process::Command::new("git")
+            .args(["-C"])
+            .arg(&clone_path)
+            .args(["rev-parse", "origin/master"])
+            .output()
+            .unwrap();
+
+        let after_sha = String::from_utf8_lossy(&after.stdout).trim().to_string();
+        assert!(!after_sha.is_empty(), "Should have a valid SHA after fetch");
+
+        // The fetched SHA should differ from the initial empty state
+        if let Ok(b) = before {
+            let before_sha = String::from_utf8_lossy(&b.stdout).trim().to_string();
+            assert_ne!(before_sha, after_sha, "Fetch should update remote tracking ref");
+        }
+    }
+
+    #[test]
+    fn test_execute_sync_clone_updates_report() {
+        let temp = assert_fs::TempDir::new().unwrap();
+        let bare = create_bare_repo(temp.path(), "sync-clone");
+
+        let repos = vec![RepoSyncInfo {
+            url: bare.display().to_string(),
+            name: "sync-clone".to_string(),
+            local_path: temp.path().join("sync-cloned"),
+            exists: false,
+        }];
+
+        let mut report = SyncReport::new();
+        let mut progress = ProgressTracker::hidden();
+
+        execute_sync(repos, &mut report, &mut progress);
+
+        assert_eq!(report.repos_cloned, 1, "Should report 1 clone");
+        assert_eq!(report.repos_fetched, 0, "Should report 0 fetches");
+        assert!(report.errors.is_empty(), "Should have no errors");
+    }
+
+    #[test]
+    fn test_execute_sync_fetch_updates_report() {
+        let temp = assert_fs::TempDir::new().unwrap();
+        let bare = create_bare_repo(temp.path(), "sync-fetch");
+
+        // Clone the bare repo first so it "exists"
+        let clone_path = temp.path().join("sync-fetched");
+        std::process::Command::new("git")
+            .args(["clone"])
+            .arg(&bare)
+            .arg(&clone_path)
+            .output()
+            .expect("git clone failed");
+
+        let repos = vec![RepoSyncInfo {
+            url: bare.display().to_string(),
+            name: "sync-fetch".to_string(),
+            local_path: clone_path,
+            exists: true,
+        }];
+
+        let mut report = SyncReport::new();
+        let mut progress = ProgressTracker::hidden();
+
+        execute_sync(repos, &mut report, &mut progress);
+
+        assert_eq!(report.repos_fetched, 1, "Should report 1 fetch");
+        assert_eq!(report.repos_cloned, 0, "Should report 0 clones");
+        assert!(report.errors.is_empty(), "Should have no errors");
+    }
+
+    #[test]
+    fn test_execute_sync_mixed_clone_and_fetch() {
+        let temp = assert_fs::TempDir::new().unwrap();
+        let bare1 = create_bare_repo(temp.path(), "mixed-clone");
+        let bare2 = create_bare_repo(temp.path(), "mixed-fetch");
+
+        // Clone bare2 so it "exists"
+        let clone_path = temp.path().join("mixed-fetched");
+        std::process::Command::new("git")
+            .args(["clone"])
+            .arg(&bare2)
+            .arg(&clone_path)
+            .output()
+            .expect("git clone failed");
+
+        let repos = vec![
+            RepoSyncInfo {
+                url: bare1.display().to_string(),
+                name: "mixed-clone".to_string(),
+                local_path: temp.path().join("mixed-cloned"),
+                exists: false,
+            },
+            RepoSyncInfo {
+                url: bare2.display().to_string(),
+                name: "mixed-fetch".to_string(),
+                local_path: clone_path,
+                exists: true,
+            },
+        ];
+
+        let mut report = SyncReport::new();
+        let mut progress = ProgressTracker::hidden();
+
+        execute_sync(repos, &mut report, &mut progress);
+
+        assert_eq!(report.repos_cloned, 1);
+        assert_eq!(report.repos_fetched, 1);
+        assert!(report.errors.is_empty());
+    }
+
+    #[test]
+    fn test_execute_git_with_progress_success() {
+        let mut cmd = std::process::Command::new("git");
+        cmd.arg("--version");
+        let progress = ProgressTracker::hidden();
+
+        let result = execute_git_with_progress(cmd, &progress, "test", "Version");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_execute_git_with_progress_failure() {
+        let mut cmd = std::process::Command::new("git");
+        cmd.args(["clone", "nonexistent-url-xyzzy", "/tmp/never"]);
+        let progress = ProgressTracker::hidden();
+
+        let result = execute_git_with_progress(cmd, &progress, "test", "Cloning");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_write_dry_run_report_with_clones() {
+        let report = SyncReport {
+            total_repos: 2,
+            repos_to_clone: 1,
+            repos_to_fetch: 1,
+            ..Default::default()
+        };
+        let repos = vec![
+            RepoSyncInfo {
+                url: "u1".to_string(),
+                name: "new-repo".to_string(),
+                local_path: PathBuf::from("/tmp/new-repo"),
+                exists: false,
+            },
+            RepoSyncInfo {
+                url: "u2".to_string(),
+                name: "existing-repo".to_string(),
+                local_path: PathBuf::from("/tmp/existing-repo"),
+                exists: true,
+            },
+        ];
+        let mut buf = Vec::new();
+        write_dry_run_report(&report, &repos, &mut buf);
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("Dry Run Mode"), "got: {}", output);
+        assert!(output.contains("Total repositories: 2"), "got: {}", output);
+        assert!(output.contains("Would clone:"), "should list repos to clone, got: {}", output);
+        assert!(output.contains("new-repo"), "got: {}", output);
+        assert!(output.contains("Would fetch updates:"), "should list repos to fetch, got: {}", output);
+        assert!(output.contains("existing-repo"), "got: {}", output);
+    }
+
+    #[test]
+    fn test_write_dry_run_report_nothing_to_clone() {
+        let report = SyncReport {
+            total_repos: 1,
+            repos_to_clone: 0,
+            repos_to_fetch: 1,
+            ..Default::default()
+        };
+        let repos = vec![RepoSyncInfo {
+            url: "u".to_string(),
+            name: "existing".to_string(),
+            local_path: PathBuf::from("/tmp/existing"),
+            exists: true,
+        }];
+        let mut buf = Vec::new();
+        write_dry_run_report(&report, &repos, &mut buf);
+        let output = String::from_utf8(buf).unwrap();
+        assert!(!output.contains("Would clone:"), "nothing to clone, got: {}", output);
+        assert!(output.contains("Would fetch updates:"), "got: {}", output);
+    }
+
+    #[test]
+    fn test_write_dry_run_report_nothing_to_fetch() {
+        let report = SyncReport {
+            total_repos: 1,
+            repos_to_clone: 1,
+            repos_to_fetch: 0,
+            ..Default::default()
+        };
+        let repos = vec![RepoSyncInfo {
+            url: "u".to_string(),
+            name: "new".to_string(),
+            local_path: PathBuf::from("/tmp/new"),
+            exists: false,
+        }];
+        let mut buf = Vec::new();
+        write_dry_run_report(&report, &repos, &mut buf);
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("Would clone:"), "got: {}", output);
+        assert!(!output.contains("Would fetch updates:"), "nothing to fetch, got: {}", output);
+    }
+
+    #[test]
+    fn test_write_sync_summary_no_errors() {
+        let report = SyncReport {
+            total_repos: 3,
+            repos_cloned: 1,
+            repos_fetched: 2,
+            ..Default::default()
+        };
+        let mut buf = Vec::new();
+        let mut err_buf = Vec::new();
+        write_sync_summary(&report, &mut buf, &mut err_buf);
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("Sync Summary"), "got: {}", output);
+        assert!(output.contains("Total repositories: 3"), "got: {}", output);
+        assert!(output.contains("Cloned: 1"), "got: {}", output);
+        assert!(output.contains("Fetched: 2"), "got: {}", output);
+        assert!(!output.contains("Errors:"), "no errors expected, got: {}", output);
+    }
+
+    #[test]
+    fn test_write_sync_summary_with_errors() {
+        let report = SyncReport {
+            total_repos: 2,
+            repos_cloned: 0,
+            repos_fetched: 0,
+            errors: vec!["clone failed".to_string(), "fetch timeout".to_string()],
+            ..Default::default()
+        };
+        let mut buf = Vec::new();
+        let mut err_buf = Vec::new();
+        write_sync_summary(&report, &mut buf, &mut err_buf);
+        let output = String::from_utf8(buf).unwrap();
+        let err_output = String::from_utf8(err_buf).unwrap();
+        assert!(output.contains("Errors: 2"), "got: {}", output);
+        assert!(err_output.contains("clone failed"), "got: {}", err_output);
+        assert!(err_output.contains("fetch timeout"), "got: {}", err_output);
     }
 }

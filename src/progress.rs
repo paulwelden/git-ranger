@@ -258,4 +258,17 @@ mod tests {
         let bar = tracker.main_bar.as_ref().unwrap();
         assert_eq!(bar.position(), 2);
     }
+
+    #[test]
+    fn test_hidden_tracker_draw_target_is_hidden() {
+        let tracker = ProgressTracker::hidden();
+        // A hidden tracker's MultiProgress should report is_hidden() = true
+        // on bars it creates. A default (non-hidden) tracker would not.
+        let bar = tracker.multi_progress.add(ProgressBar::new(10));
+        assert!(
+            bar.is_hidden(),
+            "Bars added to a hidden tracker should have a hidden draw target"
+        );
+    }
+
 }

@@ -63,7 +63,7 @@ pub fn status_command(options: &StatusOptions) -> Result<StatusReport, StatusErr
     }
 
     // Print status report
-    print_status_report(&report);
+    write_status_report(&report, &mut std::io::stdout());
 
     Ok(report)
 }
@@ -83,15 +83,15 @@ fn analyze_repo_status(repo_config: &RepoConfig, base_dir: &Path) -> RepoStatus 
     }
 }
 
-fn print_status_report(report: &StatusReport) {
-    println!("\n=== Repository Status ===");
-    println!("Total repositories: {}", report.total_repos);
-    println!("Cloned: {}", report.repos_cloned);
-    println!("Not cloned: {}", report.repos_not_cloned);
-    println!();
+fn write_status_report(report: &StatusReport, w: &mut impl std::io::Write) {
+    writeln!(w, "\n=== Repository Status ===").ok();
+    writeln!(w, "Total repositories: {}", report.total_repos).ok();
+    writeln!(w, "Cloned: {}", report.repos_cloned).ok();
+    writeln!(w, "Not cloned: {}", report.repos_not_cloned).ok();
+    writeln!(w).ok();
 
     if report.repos.is_empty() {
-        println!("No repositories configured.");
+        writeln!(w, "No repositories configured.").ok();
         return;
     }
 
@@ -99,16 +99,17 @@ fn print_status_report(report: &StatusReport) {
         let status_icon = if repo.cloned { "✓" } else { "✗" };
         let status_text = if repo.cloned { "cloned" } else { "not cloned" };
 
-        println!(
+        writeln!(
+            w,
             "{} {} - {} ({})",
             status_icon,
             repo.name,
             status_text,
             repo.local_path.display()
-        );
+        ).ok();
     }
 
-    println!();
+    writeln!(w).ok();
 }
 
 #[cfg(test)]
@@ -188,5 +189,46 @@ mod unit_tests {
         ));
         let msg = err.to_string();
         assert!(msg.contains("IO error"), "got: {}", msg);
+    }
+
+    #[test]
+    fn test_write_status_report_empty() {
+        let report = StatusReport::new();
+        let mut buf = Vec::new();
+        write_status_report(&report, &mut buf);
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("Repository Status"), "got: {}", output);
+        assert!(output.contains("No repositories configured"), "got: {}", output);
+    }
+
+    #[test]
+    fn test_write_status_report_with_repos() {
+        let report = StatusReport {
+            total_repos: 2,
+            repos_cloned: 1,
+            repos_not_cloned: 1,
+            repos: vec![
+                RepoStatus {
+                    name: "repo-a".to_string(),
+                    local_path: PathBuf::from("/tmp/repo-a"),
+                    cloned: true,
+                },
+                RepoStatus {
+                    name: "repo-b".to_string(),
+                    local_path: PathBuf::from("/tmp/repo-b"),
+                    cloned: false,
+                },
+            ],
+        };
+        let mut buf = Vec::new();
+        write_status_report(&report, &mut buf);
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("Total repositories: 2"), "got: {}", output);
+        assert!(output.contains("Cloned: 1"), "got: {}", output);
+        assert!(output.contains("Not cloned: 1"), "got: {}", output);
+        assert!(output.contains("repo-a"), "got: {}", output);
+        assert!(output.contains("cloned"), "got: {}", output);
+        assert!(output.contains("repo-b"), "got: {}", output);
+        assert!(output.contains("not cloned"), "got: {}", output);
     }
 }
