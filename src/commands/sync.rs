@@ -85,12 +85,14 @@ pub fn sync_command(options: &SyncOptions) -> Result<SyncReport, SyncError> {
     let mut report = build_initial_report(&repos_to_sync);
 
     if options.dry_run {
-        write_dry_run_report(&report, &repos_to_sync, &mut std::io::stdout());
+        let stdout = std::io::stdout();
+        write_dry_run_report(&report, &repos_to_sync, &mut stdout.lock());
         return Ok(report);
     }
 
     execute_sync(repos_to_sync, &mut report, &mut progress);
-    write_sync_summary(&report, &mut std::io::stdout(), &mut std::io::stderr());
+    let stdout = std::io::stdout();
+    write_sync_summary(&report, &mut stdout.lock());
 
     Ok(report)
 }
@@ -315,11 +317,7 @@ fn write_dry_run_report(
     writeln!(w, "\nNo changes made. Run without --dry-run to execute.").ok();
 }
 
-fn write_sync_summary(
-    report: &SyncReport,
-    w: &mut impl std::io::Write,
-    ew: &mut impl std::io::Write,
-) {
+fn write_sync_summary(report: &SyncReport, w: &mut impl std::io::Write) {
     writeln!(w, "\n=== Sync Summary ===").ok();
     writeln!(w, "Total repositories: {}", report.total_repos).ok();
     writeln!(w, "Cloned: {}", report.repos_cloned).ok();
@@ -328,7 +326,7 @@ fn write_sync_summary(
     if !report.errors.is_empty() {
         writeln!(w, "Errors: {}", report.errors.len()).ok();
         for error in &report.errors {
-            writeln!(ew, "  - {}", error).ok();
+            writeln!(w, "  - {}", error).ok();
         }
     }
 }
@@ -746,8 +744,18 @@ mod unit_tests {
         assert!(msg.contains("GitLab API error"), "got: {}", msg);
     }
 
-    /// Helper: create a bare git repo in `dir` and return its path.
-    fn create_bare_repo(dir: &std::path::Path, name: &str) -> PathBuf {
+    /// Run a git command in `dir` and return its output.
+    fn git_in(dir: &Path, args: &[&str]) -> std::process::Output {
+        std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir)
+            .args(args)
+            .output()
+            .expect("git command failed")
+    }
+
+    /// Create a bare git repo in `dir` and return its path.
+    fn create_bare_repo(dir: &Path, name: &str) -> PathBuf {
         let bare_path = dir.join(format!("{}.git", name));
         std::process::Command::new("git")
             .args(["init", "--bare"])
@@ -755,6 +763,16 @@ mod unit_tests {
             .output()
             .expect("git init --bare failed");
         bare_path
+    }
+
+    /// Clone `source` into `dest`.
+    fn git_clone(source: &Path, dest: &Path) {
+        std::process::Command::new("git")
+            .arg("clone")
+            .arg(source)
+            .arg(dest)
+            .output()
+            .expect("git clone failed");
     }
 
     #[test]
@@ -783,65 +801,20 @@ mod unit_tests {
         let temp = assert_fs::TempDir::new().unwrap();
         let bare = create_bare_repo(temp.path(), "test-fetch");
 
-        // Clone the bare repo first
         let clone_path = temp.path().join("fetched-repo");
-        std::process::Command::new("git")
-            .args(["clone"])
-            .arg(&bare)
-            .arg(&clone_path)
-            .output()
-            .expect("git clone failed");
+        git_clone(&bare, &clone_path);
 
-        // Create a commit in a working copy and push to bare
+        // Push a new commit via a second clone
         let pusher = temp.path().join("pusher");
-        std::process::Command::new("git")
-            .args(["clone"])
-            .arg(&bare)
-            .arg(&pusher)
-            .output()
-            .expect("git clone for pusher failed");
-
-        // Configure git user for commit
-        std::process::Command::new("git")
-            .args(["-C"])
-            .arg(&pusher)
-            .args(["config", "user.email", "test@test.com"])
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["-C"])
-            .arg(&pusher)
-            .args(["config", "user.name", "Test"])
-            .output()
-            .unwrap();
-
-        // Create a file, commit, and push
+        git_clone(&bare, &pusher);
+        git_in(&pusher, &["config", "user.email", "test@test.com"]);
+        git_in(&pusher, &["config", "user.name", "Test"]);
         std::fs::write(pusher.join("file.txt"), "content").unwrap();
-        std::process::Command::new("git")
-            .args(["-C"])
-            .arg(&pusher)
-            .args(["add", "file.txt"])
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["-C"])
-            .arg(&pusher)
-            .args(["commit", "-m", "add file"])
-            .output()
-            .unwrap();
-        std::process::Command::new("git")
-            .args(["-C"])
-            .arg(&pusher)
-            .args(["push"])
-            .output()
-            .unwrap();
+        git_in(&pusher, &["add", "file.txt"]);
+        git_in(&pusher, &["commit", "-m", "add file"]);
+        git_in(&pusher, &["push"]);
 
-        // Record the remote HEAD before fetch
-        let before = std::process::Command::new("git")
-            .args(["-C"])
-            .arg(&clone_path)
-            .args(["rev-parse", "origin/master"])
-            .output();
+        let before = git_in(&clone_path, &["rev-parse", "origin/master"]);
 
         let repo = RepoSyncInfo {
             url: bare.display().to_string(),
@@ -849,27 +822,15 @@ mod unit_tests {
             local_path: clone_path.clone(),
             exists: true,
         };
-        let progress = ProgressTracker::hidden();
-
-        let result = fetch_repo(&repo, &progress);
+        let result = fetch_repo(&repo, &ProgressTracker::hidden());
         assert!(result.is_ok(), "fetch_repo should succeed: {:?}", result);
 
-        // After fetch, origin/master should point to the new commit
-        let after = std::process::Command::new("git")
-            .args(["-C"])
-            .arg(&clone_path)
-            .args(["rev-parse", "origin/master"])
-            .output()
-            .unwrap();
-
+        let after = git_in(&clone_path, &["rev-parse", "origin/master"]);
         let after_sha = String::from_utf8_lossy(&after.stdout).trim().to_string();
         assert!(!after_sha.is_empty(), "Should have a valid SHA after fetch");
 
-        // The fetched SHA should differ from the initial empty state
-        if let Ok(b) = before {
-            let before_sha = String::from_utf8_lossy(&b.stdout).trim().to_string();
-            assert_ne!(before_sha, after_sha, "Fetch should update remote tracking ref");
-        }
+        let before_sha = String::from_utf8_lossy(&before.stdout).trim().to_string();
+        assert_ne!(before_sha, after_sha, "Fetch should update remote tracking ref");
     }
 
     #[test]
@@ -899,14 +860,8 @@ mod unit_tests {
         let temp = assert_fs::TempDir::new().unwrap();
         let bare = create_bare_repo(temp.path(), "sync-fetch");
 
-        // Clone the bare repo first so it "exists"
         let clone_path = temp.path().join("sync-fetched");
-        std::process::Command::new("git")
-            .args(["clone"])
-            .arg(&bare)
-            .arg(&clone_path)
-            .output()
-            .expect("git clone failed");
+        git_clone(&bare, &clone_path);
 
         let repos = vec![RepoSyncInfo {
             url: bare.display().to_string(),
@@ -931,14 +886,8 @@ mod unit_tests {
         let bare1 = create_bare_repo(temp.path(), "mixed-clone");
         let bare2 = create_bare_repo(temp.path(), "mixed-fetch");
 
-        // Clone bare2 so it "exists"
         let clone_path = temp.path().join("mixed-fetched");
-        std::process::Command::new("git")
-            .args(["clone"])
-            .arg(&bare2)
-            .arg(&clone_path)
-            .output()
-            .expect("git clone failed");
+        git_clone(&bare2, &clone_path);
 
         let repos = vec![
             RepoSyncInfo {
@@ -1069,8 +1018,7 @@ mod unit_tests {
             ..Default::default()
         };
         let mut buf = Vec::new();
-        let mut err_buf = Vec::new();
-        write_sync_summary(&report, &mut buf, &mut err_buf);
+        write_sync_summary(&report, &mut buf);
         let output = String::from_utf8(buf).unwrap();
         assert!(output.contains("Sync Summary"), "got: {}", output);
         assert!(output.contains("Total repositories: 3"), "got: {}", output);
@@ -1089,12 +1037,10 @@ mod unit_tests {
             ..Default::default()
         };
         let mut buf = Vec::new();
-        let mut err_buf = Vec::new();
-        write_sync_summary(&report, &mut buf, &mut err_buf);
+        write_sync_summary(&report, &mut buf);
         let output = String::from_utf8(buf).unwrap();
-        let err_output = String::from_utf8(err_buf).unwrap();
         assert!(output.contains("Errors: 2"), "got: {}", output);
-        assert!(err_output.contains("clone failed"), "got: {}", err_output);
-        assert!(err_output.contains("fetch timeout"), "got: {}", err_output);
+        assert!(output.contains("clone failed"), "got: {}", output);
+        assert!(output.contains("fetch timeout"), "got: {}", output);
     }
 }

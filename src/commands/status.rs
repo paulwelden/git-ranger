@@ -63,7 +63,8 @@ pub fn status_command(options: &StatusOptions) -> Result<StatusReport, StatusErr
     }
 
     // Print status report
-    write_status_report(&report, &mut std::io::stdout());
+    let stdout = std::io::stdout();
+    write_status_report(&report, &mut stdout.lock());
 
     Ok(report)
 }

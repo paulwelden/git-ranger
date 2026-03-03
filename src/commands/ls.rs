@@ -40,7 +40,8 @@ pub fn ls_command(options: &LsOptions) -> Result<Vec<RepoInfo>, LsError> {
     }
 
     // Print listing
-    write_repo_listing(&repos, &mut std::io::stdout());
+    let stdout = std::io::stdout();
+    write_repo_listing(&repos, &mut stdout.lock());
 
     Ok(repos)
 }
