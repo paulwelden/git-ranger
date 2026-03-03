@@ -507,4 +507,234 @@ mod unit_tests {
         assert_eq!(report.repos_to_clone, 0);
         assert_eq!(report.repos_to_fetch, 0);
     }
+
+    #[test]
+    fn test_should_sync_repo_partial_url_match_middle() {
+        let repo = RepoConfig {
+            url: "https://github.com/myorg/awesome-tool.git".to_string(),
+            local_dir: None,
+        };
+        assert!(should_sync_repo(&repo, Some("awesome")));
+    }
+
+    #[test]
+    fn test_should_sync_repo_case_sensitive() {
+        let repo = RepoConfig {
+            url: "https://github.com/example/Test.git".to_string(),
+            local_dir: None,
+        };
+        assert!(!should_sync_repo(&repo, Some("test")));
+        assert!(should_sync_repo(&repo, Some("Test")));
+    }
+
+    #[test]
+    fn test_should_sync_repo_empty_string_target() {
+        let repo = RepoConfig {
+            url: "https://github.com/example/repo.git".to_string(),
+            local_dir: None,
+        };
+        // Empty string matches everything (every string contains "")
+        assert!(should_sync_repo(&repo, Some("")));
+    }
+
+    #[test]
+    fn test_build_initial_report_all_existing() {
+        let repos = vec![
+            RepoSyncInfo {
+                url: "u1".to_string(),
+                name: "r1".to_string(),
+                local_path: PathBuf::from("/tmp/r1"),
+                exists: true,
+            },
+            RepoSyncInfo {
+                url: "u2".to_string(),
+                name: "r2".to_string(),
+                local_path: PathBuf::from("/tmp/r2"),
+                exists: true,
+            },
+        ];
+        let report = build_initial_report(&repos);
+        assert_eq!(report.total_repos, 2);
+        assert_eq!(report.repos_to_fetch, 2);
+        assert_eq!(report.repos_to_clone, 0);
+    }
+
+    #[test]
+    fn test_build_initial_report_all_new() {
+        let repos = vec![
+            RepoSyncInfo {
+                url: "u1".to_string(),
+                name: "r1".to_string(),
+                local_path: PathBuf::from("/tmp/r1"),
+                exists: false,
+            },
+            RepoSyncInfo {
+                url: "u2".to_string(),
+                name: "r2".to_string(),
+                local_path: PathBuf::from("/tmp/r2"),
+                exists: false,
+            },
+        ];
+        let report = build_initial_report(&repos);
+        assert_eq!(report.total_repos, 2);
+        assert_eq!(report.repos_to_clone, 2);
+        assert_eq!(report.repos_to_fetch, 0);
+    }
+
+    #[test]
+    fn test_build_initial_report_empty() {
+        let repos: Vec<RepoSyncInfo> = vec![];
+        let report = build_initial_report(&repos);
+        assert_eq!(report.total_repos, 0);
+        assert_eq!(report.repos_to_clone, 0);
+        assert_eq!(report.repos_to_fetch, 0);
+    }
+
+    #[test]
+    fn test_build_initial_report_single_new() {
+        let repos = vec![RepoSyncInfo {
+            url: "u".to_string(),
+            name: "r".to_string(),
+            local_path: PathBuf::from("/tmp/r"),
+            exists: false,
+        }];
+        let report = build_initial_report(&repos);
+        assert_eq!(report.total_repos, 1);
+        assert_eq!(report.repos_to_clone, 1);
+        assert_eq!(report.repos_to_fetch, 0);
+    }
+
+    #[test]
+    fn test_analyze_repo_nonexistent_path() {
+        let repo_config = RepoConfig {
+            url: "https://github.com/example/no-such-repo.git".to_string(),
+            local_dir: None,
+        };
+        let info = analyze_repo(&repo_config, Path::new("/nonexistent/base")).unwrap();
+        assert!(!info.exists);
+        assert_eq!(info.name, "no-such-repo");
+    }
+
+    #[test]
+    fn test_analyze_repo_with_fake_git_dir() {
+        let temp = assert_fs::TempDir::new().unwrap();
+        let repo_dir = temp.path().join("my-repo");
+        std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
+
+        let repo_config = RepoConfig {
+            url: "https://github.com/example/my-repo.git".to_string(),
+            local_dir: None,
+        };
+        let info = analyze_repo(&repo_config, temp.path()).unwrap();
+        assert!(info.exists);
+        assert_eq!(info.name, "my-repo");
+    }
+
+    #[test]
+    fn test_convert_gitlab_project_in_group_root() {
+        let project = crate::providers::gitlab::GitLabProject {
+            id: 1,
+            name: "my-tool".to_string(),
+            path: "my-tool".to_string(),
+            path_with_namespace: "mygroup/my-tool".to_string(),
+            ssh_url_to_repo: "git@gitlab.com:mygroup/my-tool.git".to_string(),
+            http_url_to_repo: "https://gitlab.com/mygroup/my-tool.git".to_string(),
+            archived: false,
+        };
+        let config = convert_gitlab_project_to_repo_config(&project, "mygroup", Some("projects"));
+        assert_eq!(config.url, "git@gitlab.com:mygroup/my-tool.git");
+        // Project is directly in group root, no subpath
+        assert_eq!(config.local_dir, Some("projects".to_string()));
+    }
+
+    #[test]
+    fn test_convert_gitlab_project_in_subgroup() {
+        let project = crate::providers::gitlab::GitLabProject {
+            id: 2,
+            name: "my-tool".to_string(),
+            path: "my-tool".to_string(),
+            path_with_namespace: "mygroup/sub1/my-tool".to_string(),
+            ssh_url_to_repo: "git@gitlab.com:mygroup/sub1/my-tool.git".to_string(),
+            http_url_to_repo: "https://gitlab.com/mygroup/sub1/my-tool.git".to_string(),
+            archived: false,
+        };
+        let config = convert_gitlab_project_to_repo_config(&project, "mygroup", Some("projects"));
+        assert_eq!(config.local_dir, Some("projects/sub1".to_string()));
+    }
+
+    #[test]
+    fn test_convert_gitlab_project_deep_nesting() {
+        let project = crate::providers::gitlab::GitLabProject {
+            id: 3,
+            name: "my-tool".to_string(),
+            path: "my-tool".to_string(),
+            path_with_namespace: "mygroup/sub1/sub2/my-tool".to_string(),
+            ssh_url_to_repo: "git@gitlab.com:mygroup/sub1/sub2/my-tool.git".to_string(),
+            http_url_to_repo: "https://gitlab.com/mygroup/sub1/sub2/my-tool.git".to_string(),
+            archived: false,
+        };
+        let config = convert_gitlab_project_to_repo_config(&project, "mygroup", Some("projects"));
+        assert_eq!(config.local_dir, Some("projects/sub1/sub2".to_string()));
+    }
+
+    #[test]
+    fn test_convert_gitlab_project_without_base_local_dir() {
+        let project = crate::providers::gitlab::GitLabProject {
+            id: 4,
+            name: "my-tool".to_string(),
+            path: "my-tool".to_string(),
+            path_with_namespace: "mygroup/sub1/my-tool".to_string(),
+            ssh_url_to_repo: "git@gitlab.com:mygroup/sub1/my-tool.git".to_string(),
+            http_url_to_repo: "https://gitlab.com/mygroup/sub1/my-tool.git".to_string(),
+            archived: false,
+        };
+        let config = convert_gitlab_project_to_repo_config(&project, "mygroup", None);
+        assert!(config.local_dir.is_none());
+    }
+
+    #[test]
+    fn test_sync_report_new_equals_default() {
+        let new_report = SyncReport::new();
+        let default_report = SyncReport::default();
+        assert_eq!(new_report.total_repos, default_report.total_repos);
+        assert_eq!(new_report.repos_to_clone, default_report.repos_to_clone);
+        assert_eq!(new_report.repos_to_fetch, default_report.repos_to_fetch);
+        assert_eq!(new_report.repos_cloned, default_report.repos_cloned);
+        assert_eq!(new_report.repos_fetched, default_report.repos_fetched);
+        assert_eq!(new_report.errors.len(), default_report.errors.len());
+    }
+
+    #[test]
+    fn test_sync_error_common_display() {
+        let inner = CommonError::ConfigNotFound("/path".to_string());
+        let err = SyncError::Common(inner);
+        let msg = err.to_string();
+        assert!(msg.contains("not found"), "got: {}", msg);
+    }
+
+    #[test]
+    fn test_sync_error_io_display() {
+        let err = SyncError::IoError(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "file missing",
+        ));
+        let msg = err.to_string();
+        assert!(msg.contains("IO error"), "got: {}", msg);
+    }
+
+    #[test]
+    fn test_sync_error_git_display() {
+        let err = SyncError::GitError("clone failed".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("Git operation failed"), "got: {}", msg);
+        assert!(msg.contains("clone failed"), "got: {}", msg);
+    }
+
+    #[test]
+    fn test_sync_error_gitlab_display() {
+        let inner = crate::providers::gitlab::GitLabError::GroupNotFound("mygroup".to_string());
+        let err = SyncError::GitLabError(inner);
+        let msg = err.to_string();
+        assert!(msg.contains("GitLab API error"), "got: {}", msg);
+    }
 }

@@ -200,6 +200,48 @@ repos:
         // Should identify repos that need cloning
         assert!(report.repos_to_clone > 0);
     }
+
+    #[test]
+    fn test_sync_dry_run_with_non_matching_target() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = create_test_config(temp_dir.path());
+
+        let options = SyncOptions {
+            config_path,
+            target: Some("nonexistent-target-xyz".to_string()),
+            dry_run: true,
+        };
+
+        let result = sync_command(&options);
+        assert!(result.is_ok());
+        let report = result.unwrap();
+        assert_eq!(report.total_repos, 0);
+    }
+
+    #[test]
+    fn test_sync_dry_run_repos_only_config() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("ranger.yaml");
+        let config_content = r#"
+repos:
+  - url: "https://github.com/example/repo-a.git"
+  - url: "https://github.com/example/repo-b.git"
+"#;
+        fs::write(&config_path, config_content).unwrap();
+
+        let options = SyncOptions {
+            config_path,
+            target: None,
+            dry_run: true,
+        };
+
+        let result = sync_command(&options);
+        assert!(result.is_ok());
+        let report = result.unwrap();
+        assert_eq!(report.total_repos, 2);
+        assert_eq!(report.repos_to_clone, 2);
+        assert_eq!(report.repos_to_fetch, 0);
+    }
 }
 
 // Integration tests that test through the CLI

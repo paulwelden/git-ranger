@@ -217,4 +217,45 @@ mod tests {
         // Should not panic when finishing without a main bar
         tracker.finish_with_message("Done");
     }
+
+    #[test]
+    fn test_create_sub_progress_with_main_bar() {
+        let mut tracker = ProgressTracker::new();
+        tracker.init_main_bar(5, "Main task");
+        // With main_bar present, create_sub_progress uses insert_before
+        let sub = tracker.create_sub_progress("Sub operation");
+        assert!(!sub.is_finished());
+        tracker.finish_sub_progress(sub.clone());
+        assert!(sub.is_finished());
+    }
+
+    #[test]
+    fn test_hidden_tracker_full_lifecycle() {
+        let mut tracker = ProgressTracker::hidden();
+        let spinner = tracker.create_spinner("Discovering...");
+        tracker.finish_spinner(spinner.clone(), "Done discovering");
+        assert!(spinner.is_finished());
+
+        tracker.init_main_bar(3, "Syncing");
+        let sub = tracker.create_sub_progress("Cloning repo-1");
+        tracker.finish_sub_progress(sub);
+
+        tracker.inc();
+        tracker.inc();
+        tracker.inc();
+        tracker.finish_with_message("All done");
+
+        assert!(tracker.main_bar.as_ref().unwrap().is_finished());
+    }
+
+    #[test]
+    fn test_multiple_inc_advances_position() {
+        let mut tracker = ProgressTracker::new();
+        tracker.init_main_bar(5, "Processing");
+        tracker.inc();
+        tracker.inc();
+
+        let bar = tracker.main_bar.as_ref().unwrap();
+        assert_eq!(bar.position(), 2);
+    }
 }

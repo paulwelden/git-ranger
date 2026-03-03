@@ -96,4 +96,53 @@ mod unit_tests {
             PathBuf::from("/home/user/workspace/projects/awesome-project")
         );
     }
+
+    #[test]
+    fn test_build_repo_info_ssh_url() {
+        let repo_config = RepoConfig {
+            url: "git@github.com:user/ssh-project.git".to_string(),
+            local_dir: Some("repos".to_string()),
+        };
+        let base_dir = Path::new("/home/user");
+
+        let info = build_repo_info(&repo_config, base_dir);
+
+        assert_eq!(info.name, "ssh-project");
+        assert_eq!(info.url, "git@github.com:user/ssh-project.git");
+    }
+
+    #[test]
+    fn test_build_repo_info_without_local_dir() {
+        let repo_config = RepoConfig {
+            url: "https://github.com/user/fallback-repo.git".to_string(),
+            local_dir: None,
+        };
+        let base_dir = Path::new("/home/user/workspace");
+
+        let info = build_repo_info(&repo_config, base_dir);
+
+        assert_eq!(info.name, "fallback-repo");
+        assert_eq!(
+            info.local_path,
+            PathBuf::from("/home/user/workspace/fallback-repo")
+        );
+    }
+
+    #[test]
+    fn test_ls_error_common_display() {
+        let inner = CommonError::ConfigNotFound("/some/path".to_string());
+        let err = LsError::Common(inner);
+        let msg = err.to_string();
+        assert!(msg.contains("not found"), "got: {}", msg);
+    }
+
+    #[test]
+    fn test_ls_error_io_display() {
+        let err = LsError::IoError(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "access denied",
+        ));
+        let msg = err.to_string();
+        assert!(msg.contains("IO error"), "got: {}", msg);
+    }
 }

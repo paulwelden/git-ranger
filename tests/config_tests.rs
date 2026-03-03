@@ -133,3 +133,18 @@ providers:
         env::remove_var("GITLAB_TOKEN");
     }
 }
+
+#[test]
+#[serial]
+fn test_env_resolution_error_message_format() {
+    unsafe {
+        env::remove_var("TOTALLY_MISSING_VAR_ABC");
+    }
+    let env_str = EnvString::new("${TOTALLY_MISSING_VAR_ABC}".to_string());
+    let err = env_str.resolve().unwrap_err();
+    let msg = err.to_string();
+    assert_eq!(
+        msg,
+        "Environment variable 'TOTALLY_MISSING_VAR_ABC' is not set"
+    );
+}

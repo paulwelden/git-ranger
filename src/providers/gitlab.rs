@@ -187,4 +187,69 @@ mod tests {
         let encoded = urlencoding::encode(path);
         assert_eq!(encoded, "parent%2Fchild%2Fgrandchild");
     }
+
+    #[test]
+    fn test_gitlab_project_archived_defaults_false() {
+        let json = r#"{
+            "id": 10,
+            "name": "no-archived-field",
+            "path": "no-archived-field",
+            "path_with_namespace": "group/no-archived-field",
+            "ssh_url_to_repo": "git@gitlab.com:group/no-archived-field.git",
+            "http_url_to_repo": "https://gitlab.com/group/no-archived-field.git"
+        }"#;
+        let project: GitLabProject = serde_json::from_str(json).unwrap();
+        assert!(!project.archived);
+    }
+
+    #[test]
+    fn test_gitlab_project_archived_explicit_false() {
+        let json = r#"{
+            "id": 11,
+            "name": "explicit-false",
+            "path": "explicit-false",
+            "path_with_namespace": "group/explicit-false",
+            "ssh_url_to_repo": "git@gitlab.com:group/explicit-false.git",
+            "http_url_to_repo": "https://gitlab.com/group/explicit-false.git",
+            "archived": false
+        }"#;
+        let project: GitLabProject = serde_json::from_str(json).unwrap();
+        assert!(!project.archived);
+    }
+
+    #[test]
+    fn test_empty_projects_array() {
+        let json = "[]";
+        let projects: Vec<GitLabProject> = serde_json::from_str(json).unwrap();
+        assert!(projects.is_empty());
+    }
+
+    #[test]
+    fn test_gitlab_error_parse_error_message() {
+        let err = GitLabError::ParseError("unexpected token".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("Failed to parse response"), "got: {}", msg);
+        assert!(msg.contains("unexpected token"), "got: {}", msg);
+    }
+
+    #[test]
+    fn test_gitlab_project_field_access() {
+        let json = r#"{
+            "id": 99,
+            "name": "field-test",
+            "path": "field-test",
+            "path_with_namespace": "org/field-test",
+            "ssh_url_to_repo": "git@gitlab.com:org/field-test.git",
+            "http_url_to_repo": "https://gitlab.com/org/field-test.git",
+            "archived": true
+        }"#;
+        let p: GitLabProject = serde_json::from_str(json).unwrap();
+        assert_eq!(p.id, 99);
+        assert_eq!(p.name, "field-test");
+        assert_eq!(p.path, "field-test");
+        assert_eq!(p.path_with_namespace, "org/field-test");
+        assert_eq!(p.ssh_url_to_repo, "git@gitlab.com:org/field-test.git");
+        assert_eq!(p.http_url_to_repo, "https://gitlab.com/org/field-test.git");
+        assert!(p.archived);
+    }
 }

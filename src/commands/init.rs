@@ -133,4 +133,62 @@ mod unit_tests {
         assert!(parsed.get("groups").is_some());
         assert!(parsed.get("repos").is_some());
     }
+
+    #[test]
+    fn test_default_config_parseable_as_ranger_config() {
+        let config: crate::config::RangerConfig =
+            serde_yml::from_str(DEFAULT_CONFIG_TEMPLATE).unwrap();
+        // Verify it has the expected structure, not just valid YAML
+        assert!(config.providers.gitlab.is_some());
+        assert!(!config.groups.gitlab.is_empty());
+        assert!(!config.repos.is_empty());
+    }
+
+    #[test]
+    fn test_default_template_gitlab_group_has_recursive_true() {
+        let config: crate::config::RangerConfig =
+            serde_yml::from_str(DEFAULT_CONFIG_TEMPLATE).unwrap();
+        let gitlab_group = &config.groups.gitlab[0];
+        assert!(gitlab_group.recursive, "Default template group should have recursive=true");
+    }
+
+    #[test]
+    fn test_default_template_contains_env_var_placeholder() {
+        assert!(
+            DEFAULT_CONFIG_TEMPLATE.contains("${GITLAB_TOKEN}"),
+            "Template should contain ${{GITLAB_TOKEN}} placeholder"
+        );
+    }
+
+    #[test]
+    fn test_template_source_equality() {
+        assert_eq!(TemplateSource::Default, TemplateSource::Default);
+        assert_eq!(
+            TemplateSource::SavedTemplate(PathBuf::from("/a")),
+            TemplateSource::SavedTemplate(PathBuf::from("/a"))
+        );
+        assert_ne!(TemplateSource::Default, TemplateSource::SavedTemplate(PathBuf::from("/a")));
+        assert_ne!(
+            TemplateSource::SavedTemplate(PathBuf::from("/a")),
+            TemplateSource::SavedTemplate(PathBuf::from("/b"))
+        );
+    }
+
+    #[test]
+    fn test_init_error_config_already_exists_message() {
+        let err = InitError::ConfigAlreadyExists("/some/path/ranger.yaml".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("/some/path/ranger.yaml"), "got: {}", msg);
+        assert!(msg.contains("already exists"), "got: {}", msg);
+    }
+
+    #[test]
+    fn test_init_error_io_error_message() {
+        let err = InitError::IoError(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "permission denied",
+        ));
+        let msg = err.to_string();
+        assert!(msg.contains("permission denied"), "got: {}", msg);
+    }
 }

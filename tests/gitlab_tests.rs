@@ -131,6 +131,21 @@ fn test_gitlab_error_types() {
     assert!(request_failed.to_string().contains("HTTP request failed"));
 }
 
+#[test]
+fn test_gitlab_error_variant_matching() {
+    let err = GitLabError::ParseError("bad json".to_string());
+    assert!(matches!(err, GitLabError::ParseError(_)));
+
+    let err = GitLabError::AuthenticationFailed("expired".to_string());
+    assert!(matches!(err, GitLabError::AuthenticationFailed(_)));
+
+    let err = GitLabError::GroupNotFound("g".to_string());
+    assert!(matches!(err, GitLabError::GroupNotFound(_)));
+
+    let err = GitLabError::RequestFailed("timeout".to_string());
+    assert!(matches!(err, GitLabError::RequestFailed(_)));
+}
+
 // Integration test for sync with GitLab groups (requires manual testing with real credentials)
 #[test]
 #[ignore] // Ignored by default, run with --ignored when you have credentials
