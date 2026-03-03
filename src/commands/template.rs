@@ -168,4 +168,59 @@ mod unit_tests {
         save_template(temp.path()).unwrap();
         assert!(guard.path().exists());
     }
+
+    #[test]
+    #[serial]
+    fn test_config_dir_fallback_ends_with_git_ranger() {
+        // Unset the override env var so the fallback to dirs::config_dir() kicks in
+        env::remove_var("GIT_RANGER_CONFIG_DIR");
+        let result = config_dir();
+        // dirs::config_dir() may return None on some CI, so just check when it's Some
+        if let Some(path) = result {
+            assert!(
+                path.ends_with(APP_DIR_NAME),
+                "Fallback config dir should end with '{}', got: {:?}",
+                APP_DIR_NAME,
+                path
+            );
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_template_path_ends_with_template_yaml() {
+        let _guard = ConfigDirGuard::new();
+        let result = template_path().unwrap();
+        assert!(
+            result.ends_with(TEMPLATE_FILENAME),
+            "Template path should end with '{}', got: {:?}",
+            TEMPLATE_FILENAME,
+            result
+        );
+    }
+
+    #[test]
+    fn test_template_error_config_not_found_message() {
+        let err = TemplateError::ConfigNotFound("/path/to/ranger.yaml".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("No ranger.yaml found"), "got: {}", msg);
+        assert!(msg.contains("/path/to/ranger.yaml"), "got: {}", msg);
+    }
+
+    #[test]
+    fn test_template_error_no_config_dir_message() {
+        let err = TemplateError::NoConfigDir;
+        let msg = err.to_string();
+        assert!(msg.contains("Could not determine config directory"), "got: {}", msg);
+    }
+
+    #[test]
+    fn test_template_error_io_error_message() {
+        let err = TemplateError::IoError(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "access denied",
+        ));
+        let msg = err.to_string();
+        assert!(msg.contains("access denied"), "got: {}", msg);
+    }
 }

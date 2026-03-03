@@ -142,4 +142,103 @@ mod tests {
 
         assert_eq!(path, PathBuf::from("/home/user/workspace/repo"));
     }
+
+    #[test]
+    fn test_build_local_path_with_absolute_local_dir() {
+        let repo_config = RepoConfig {
+            url: "https://github.com/user/repo.git".to_string(),
+            local_dir: Some("/absolute/path".to_string()),
+        };
+        let base_dir = Path::new("/home/user/workspace");
+        let repo_name = "repo";
+
+        let path = build_local_path(&repo_config, base_dir, repo_name);
+
+        assert_eq!(path, PathBuf::from("/absolute/path/repo"));
+    }
+
+    #[test]
+    fn test_extract_repo_name_empty_string() {
+        // rsplit('/').next() on "" returns Some(""), not None, so we get ""
+        assert_eq!(extract_repo_name(""), "");
+    }
+
+    #[test]
+    fn test_extract_repo_name_bare_domain() {
+        // No path segments after domain
+        assert_eq!(extract_repo_name("https://github.com"), "github.com");
+    }
+
+    #[test]
+    fn test_extract_repo_name_url_ending_in_just_git() {
+        // After trim_end_matches('/') then trim_end_matches(".git") we get
+        // "https://github.com/user/" — rsplit('/').next() yields ""
+        assert_eq!(extract_repo_name("https://github.com/user/.git"), "");
+    }
+
+    #[test]
+    fn test_extract_repo_name_ssh_single_segment_after_colon() {
+        assert_eq!(extract_repo_name("git@github.com:repo.git"), "repo");
+    }
+
+    #[test]
+    fn test_extract_repo_name_multiple_trailing_slashes() {
+        assert_eq!(
+            extract_repo_name("https://github.com/user/my-repo///"),
+            "my-repo"
+        );
+    }
+
+    #[test]
+    fn test_extract_repo_name_no_path_segments() {
+        assert_eq!(extract_repo_name("justarepo"), "justarepo");
+    }
+
+    #[test]
+    fn test_load_config_missing_file() {
+        let result = load_config(Path::new("/nonexistent/ranger.yaml"));
+        assert!(result.is_err());
+        match &result {
+            Err(CommonError::ConfigNotFound(msg)) => {
+                assert!(msg.contains("nonexistent"), "path should be in message, got: {}", msg);
+            }
+            other => panic!("Expected ConfigNotFound, got: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_load_config_invalid_yaml() {
+        let temp = assert_fs::TempDir::new().unwrap();
+        let path = temp.path().join("ranger.yaml");
+        std::fs::write(&path, "invalid: [yaml: {broken").unwrap();
+        let result = load_config(&path);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), CommonError::ConfigParseError(_)));
+    }
+
+    #[test]
+    fn test_common_error_config_not_found_display() {
+        let err = CommonError::ConfigNotFound("/some/path".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("not found"), "got: {}", msg);
+        assert!(msg.contains("/some/path"), "got: {}", msg);
+    }
+
+    #[test]
+    fn test_common_error_config_parse_error_display() {
+        let err = CommonError::ConfigParseError("bad yaml".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("Failed to parse"), "got: {}", msg);
+        assert!(msg.contains("bad yaml"), "got: {}", msg);
+    }
+
+    #[test]
+    fn test_common_error_io_error_display() {
+        let err = CommonError::IoError(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "access denied",
+        ));
+        let msg = err.to_string();
+        assert!(msg.contains("IO error"), "got: {}", msg);
+    }
 }

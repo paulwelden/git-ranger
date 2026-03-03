@@ -140,6 +140,68 @@ mod tests {
         let config: TestConfig = serde_yml::from_str(yaml).unwrap();
         assert_eq!(config.token.raw(), "${GITHUB_TOKEN}");
     }
+
+    #[test]
+    fn test_empty_env_var_name_treated_as_literal() {
+        // `${}` — empty var name, should be treated as literal
+        let env_str = EnvString::new("${}".to_string());
+        // starts_with("${") && ends_with("}") is true, so it tries to resolve ""
+        // env::var("") returns Err, so this should error
+        assert!(env_str.resolve().is_err());
+    }
+
+    #[test]
+    fn test_unclosed_env_var_treated_as_literal() {
+        // `${` without `}` — not a valid env var reference
+        let env_str = EnvString::new("${OPEN".to_string());
+        assert_eq!(env_str.resolve().unwrap(), "${OPEN");
+    }
+
+    #[test]
+    fn test_closing_brace_only_treated_as_literal() {
+        let env_str = EnvString::new("}".to_string());
+        assert_eq!(env_str.resolve().unwrap(), "}");
+    }
+
+    #[test]
+    fn test_dollar_brace_only_treated_as_literal() {
+        let env_str = EnvString::new("${".to_string());
+        assert_eq!(env_str.resolve().unwrap(), "${");
+    }
+
+    #[test]
+    fn test_new_raw_round_trip() {
+        let env_str = EnvString::new("hello world".to_string());
+        assert_eq!(env_str.raw(), "hello world");
+    }
+
+    #[test]
+    #[serial]
+    fn test_env_resolution_error_contains_var_name() {
+        unsafe { env::remove_var("MY_MISSING_XYZ") };
+        let env_str = EnvString::new("${MY_MISSING_XYZ}".to_string());
+        let err = env_str.resolve().unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("MY_MISSING_XYZ"), "Error should contain var name, got: {}", msg);
+        assert!(msg.contains("not set"), "Error should mention 'not set', got: {}", msg);
+    }
+
+    #[test]
+    fn test_serialize_deserialize_round_trip() {
+        let original = EnvString::new("${SOME_TOKEN}".to_string());
+        let serialized = serde_yml::to_string(&original).unwrap();
+        let deserialized: EnvString = serde_yml::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.raw(), original.raw());
+        assert_eq!(deserialized, original);
+    }
+
+    #[test]
+    fn test_serialize_literal_round_trip() {
+        let original = EnvString::new("plain-text".to_string());
+        let serialized = serde_yml::to_string(&original).unwrap();
+        let deserialized: EnvString = serde_yml::from_str(&serialized).unwrap();
+        assert_eq!(deserialized, original);
+    }
 }
 
 /// Main configuration structure for ranger.yaml
@@ -310,5 +372,63 @@ repos:
         let config: RangerConfig = serde_yml::from_str(yaml).unwrap();
 
         assert!(config.repos[0].local_dir.is_none());
+    }
+
+    #[test]
+    fn test_load_from_file_nonexistent_path() {
+        let result = RangerConfig::load_from_file(std::path::Path::new("/nonexistent/path/ranger.yaml"));
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ConfigLoadError::IoError(_)));
+    }
+
+    #[test]
+    fn test_load_from_file_invalid_yaml() {
+        let temp = assert_fs::TempDir::new().unwrap();
+        let path = temp.path().join("ranger.yaml");
+        std::fs::write(&path, "invalid: [yaml: {broken").unwrap();
+        let result = RangerConfig::load_from_file(&path);
+        assert!(result.is_err());
+        assert!(matches!(result.unwrap_err(), ConfigLoadError::ParseError(_)));
+    }
+
+    #[test]
+    fn test_get_standalone_repos_returns_correct_slice() {
+        let yaml = r#"
+repos:
+  - url: "https://github.com/a/one.git"
+  - url: "https://github.com/b/two.git"
+  - url: "https://github.com/c/three.git"
+"#;
+        let config: RangerConfig = serde_yml::from_str(yaml).unwrap();
+        let repos = config.get_standalone_repos();
+        assert_eq!(repos.len(), 3);
+        assert_eq!(repos[0].url, "https://github.com/a/one.git");
+        assert_eq!(repos[1].url, "https://github.com/b/two.git");
+        assert_eq!(repos[2].url, "https://github.com/c/three.git");
+    }
+
+    #[test]
+    fn test_get_standalone_repos_empty() {
+        let yaml = "repos: []";
+        let config: RangerConfig = serde_yml::from_str(yaml).unwrap();
+        assert!(config.get_standalone_repos().is_empty());
+    }
+
+    #[test]
+    fn test_config_load_error_io_display() {
+        let err = ConfigLoadError::IoError(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "file not found",
+        ));
+        let msg = err.to_string();
+        assert!(msg.contains("Failed to read config file"), "got: {}", msg);
+    }
+
+    #[test]
+    fn test_config_load_error_parse_display() {
+        let err = ConfigLoadError::ParseError("bad yaml".to_string());
+        let msg = err.to_string();
+        assert!(msg.contains("Failed to parse YAML config"), "got: {}", msg);
+        assert!(msg.contains("bad yaml"), "got: {}", msg);
     }
 }

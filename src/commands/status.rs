@@ -110,3 +110,83 @@ fn print_status_report(report: &StatusReport) {
 
     println!();
 }
+
+#[cfg(test)]
+mod unit_tests {
+    use super::*;
+
+    #[test]
+    fn test_analyze_repo_status_cloned() {
+        let temp = assert_fs::TempDir::new().unwrap();
+        let repo_dir = temp.path().join("my-repo");
+        std::fs::create_dir_all(repo_dir.join(".git")).unwrap();
+
+        let repo_config = RepoConfig {
+            url: "https://github.com/example/my-repo.git".to_string(),
+            local_dir: None,
+        };
+        let status = analyze_repo_status(&repo_config, temp.path());
+        assert!(status.cloned);
+    }
+
+    #[test]
+    fn test_analyze_repo_status_not_cloned() {
+        let temp = assert_fs::TempDir::new().unwrap();
+
+        let repo_config = RepoConfig {
+            url: "https://github.com/example/my-repo.git".to_string(),
+            local_dir: None,
+        };
+        let status = analyze_repo_status(&repo_config, temp.path());
+        assert!(!status.cloned);
+    }
+
+    #[test]
+    fn test_analyze_repo_status_name_extraction() {
+        let temp = assert_fs::TempDir::new().unwrap();
+
+        let repo_config = RepoConfig {
+            url: "git@github.com:org/cool-tool.git".to_string(),
+            local_dir: None,
+        };
+        let status = analyze_repo_status(&repo_config, temp.path());
+        assert_eq!(status.name, "cool-tool");
+    }
+
+    #[test]
+    fn test_status_report_new_defaults() {
+        let report = StatusReport::new();
+        assert_eq!(report.total_repos, 0);
+        assert_eq!(report.repos_cloned, 0);
+        assert_eq!(report.repos_not_cloned, 0);
+        assert!(report.repos.is_empty());
+    }
+
+    #[test]
+    fn test_status_report_new_equals_default() {
+        let new_report = StatusReport::new();
+        let default_report = StatusReport::default();
+        assert_eq!(new_report.total_repos, default_report.total_repos);
+        assert_eq!(new_report.repos_cloned, default_report.repos_cloned);
+        assert_eq!(new_report.repos_not_cloned, default_report.repos_not_cloned);
+        assert_eq!(new_report.repos.len(), default_report.repos.len());
+    }
+
+    #[test]
+    fn test_status_error_common_display() {
+        let inner = CommonError::ConfigNotFound("/path".to_string());
+        let err = StatusError::Common(inner);
+        let msg = err.to_string();
+        assert!(msg.contains("not found"), "got: {}", msg);
+    }
+
+    #[test]
+    fn test_status_error_io_display() {
+        let err = StatusError::IoError(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "file missing",
+        ));
+        let msg = err.to_string();
+        assert!(msg.contains("IO error"), "got: {}", msg);
+    }
+}
