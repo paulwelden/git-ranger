@@ -37,6 +37,8 @@ pub struct SyncReport {
     pub repos_to_fetch: usize,
     pub repos_cloned: usize,
     pub repos_fetched: usize,
+    pub repos_merged: usize,
+    pub repos_dirty: Vec<String>,
     pub errors: Vec<String>,
 }
 
@@ -54,6 +56,12 @@ struct RepoSyncInfo {
     name: String,
     local_path: PathBuf,
     exists: bool,
+}
+
+#[derive(Debug, PartialEq)]
+enum FetchResult {
+    Merged,
+    DirtySkipped,
 }
 
 pub fn sync_command(options: &SyncOptions) -> Result<SyncReport, SyncError> {
@@ -243,14 +251,19 @@ fn execute_sync(repos: Vec<RepoSyncInfo>, report: &mut SyncReport, progress: &mu
         progress.update_message(&format!("{} {}", operation, repo.name));
 
         if repo.exists {
-            match fetch_repo(&repo, progress) {
-                Ok(_) => {
+            match fetch_and_merge_repo(&repo, progress) {
+                Ok(FetchResult::Merged) => {
                     report.repos_fetched += 1;
+                    report.repos_merged += 1;
+                }
+                Ok(FetchResult::DirtySkipped) => {
+                    report.repos_fetched += 1;
+                    report.repos_dirty.push(repo.name.clone());
                 }
                 Err(e) => {
                     report
                         .errors
-                        .push(format!("Failed to fetch {}: {}", repo.name, e));
+                        .push(format!("Failed to sync {}: {}", repo.name, e));
                 }
             }
         } else {
@@ -325,6 +338,19 @@ fn write_sync_summary(report: &SyncReport, w: &mut impl std::io::Write) {
     writeln!(w, "Total repositories: {}", report.total_repos).ok();
     writeln!(w, "Cloned: {}", report.repos_cloned).ok();
     writeln!(w, "Fetched: {}", report.repos_fetched).ok();
+    writeln!(w, "Merged: {}", report.repos_merged).ok();
+
+    if !report.repos_dirty.is_empty() {
+        writeln!(
+            w,
+            "Skipped merge ({} with local changes):",
+            report.repos_dirty.len()
+        )
+        .ok();
+        for name in &report.repos_dirty {
+            writeln!(w, "  - {}", name).ok();
+        }
+    }
 
     if !report.errors.is_empty() {
         writeln!(w, "Errors: {}", report.errors.len()).ok();
@@ -388,16 +414,72 @@ fn clone_repo(repo: &RepoSyncInfo, progress: &ProgressTracker) -> Result<(), Syn
     execute_git_with_progress(command, progress, &repo.name, "Cloning")
 }
 
-fn fetch_repo(repo: &RepoSyncInfo, progress: &ProgressTracker) -> Result<(), SyncError> {
-    let mut command = std::process::Command::new("git");
-    command
+fn fetch_and_merge_repo(
+    repo: &RepoSyncInfo,
+    progress: &ProgressTracker,
+) -> Result<FetchResult, SyncError> {
+    // Fetch from all remotes
+    let mut fetch_cmd = std::process::Command::new("git");
+    fetch_cmd
         .arg("-C")
         .arg(&repo.local_path)
         .arg("fetch")
         .arg("--all")
         .arg("--progress");
+    execute_git_with_progress(fetch_cmd, progress, &repo.name, "Fetching")?;
 
-    execute_git_with_progress(command, progress, &repo.name, "Fetching")
+    // Check if working tree is clean
+    if has_local_changes(&repo.local_path)? {
+        return Ok(FetchResult::DirtySkipped);
+    }
+
+    // Check if there is an upstream tracking branch to merge from
+    if !has_upstream_tracking(&repo.local_path)? {
+        return Ok(FetchResult::Merged);
+    }
+
+    // Working tree is clean — fast-forward merge
+    let mut merge_cmd = std::process::Command::new("git");
+    merge_cmd
+        .arg("-C")
+        .arg(&repo.local_path)
+        .arg("merge")
+        .arg("--ff-only");
+    execute_git_with_progress(merge_cmd, progress, &repo.name, "Merging")?;
+
+    Ok(FetchResult::Merged)
+}
+
+fn has_upstream_tracking(repo_path: &Path) -> Result<bool, SyncError> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo_path)
+        .args(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+        .output()
+        .map_err(|e| SyncError::GitError(format!("Failed to check upstream: {}", e)))?;
+
+    Ok(output.status.success())
+}
+
+fn has_local_changes(repo_path: &Path) -> Result<bool, SyncError> {
+    let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(repo_path)
+        .arg("status")
+        .arg("--porcelain")
+        .output()
+        .map_err(|e| SyncError::GitError(format!("Failed to check git status: {}", e)))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(SyncError::GitError(format!(
+            "git status failed: {}",
+            stderr
+        )));
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(!stdout.trim().is_empty())
 }
 
 #[cfg(test)]
@@ -505,6 +587,8 @@ mod unit_tests {
         assert_eq!(report.repos_to_fetch, 0);
         assert_eq!(report.repos_cloned, 0);
         assert_eq!(report.repos_fetched, 0);
+        assert_eq!(report.repos_merged, 0);
+        assert!(report.repos_dirty.is_empty());
         assert_eq!(report.errors.len(), 0);
     }
 
@@ -710,6 +794,8 @@ mod unit_tests {
         assert_eq!(new_report.repos_to_fetch, default_report.repos_to_fetch);
         assert_eq!(new_report.repos_cloned, default_report.repos_cloned);
         assert_eq!(new_report.repos_fetched, default_report.repos_fetched);
+        assert_eq!(new_report.repos_merged, default_report.repos_merged);
+        assert_eq!(new_report.repos_dirty.len(), default_report.repos_dirty.len());
         assert_eq!(new_report.errors.len(), default_report.errors.len());
     }
 
@@ -800,7 +886,7 @@ mod unit_tests {
     }
 
     #[test]
-    fn test_fetch_repo_picks_up_new_commits() {
+    fn test_fetch_and_merge_picks_up_new_commits() {
         let temp = assert_fs::TempDir::new().unwrap();
         let bare = create_bare_repo(temp.path(), "test-fetch");
 
@@ -817,7 +903,7 @@ mod unit_tests {
         git_in(&pusher, &["commit", "-m", "add file"]);
         git_in(&pusher, &["push"]);
 
-        let before = git_in(&clone_path, &["rev-parse", "origin/master"]);
+        let before = git_in(&clone_path, &["rev-parse", "HEAD"]);
 
         let repo = RepoSyncInfo {
             url: bare.display().to_string(),
@@ -825,15 +911,62 @@ mod unit_tests {
             local_path: clone_path.clone(),
             exists: true,
         };
-        let result = fetch_repo(&repo, &ProgressTracker::hidden());
-        assert!(result.is_ok(), "fetch_repo should succeed: {:?}", result);
+        let result = fetch_and_merge_repo(&repo, &ProgressTracker::hidden());
+        assert!(result.is_ok(), "fetch_and_merge_repo should succeed: {:?}", result);
+        assert_eq!(result.unwrap(), FetchResult::Merged);
 
-        let after = git_in(&clone_path, &["rev-parse", "origin/master"]);
+        let after = git_in(&clone_path, &["rev-parse", "HEAD"]);
         let after_sha = String::from_utf8_lossy(&after.stdout).trim().to_string();
-        assert!(!after_sha.is_empty(), "Should have a valid SHA after fetch");
-
         let before_sha = String::from_utf8_lossy(&before.stdout).trim().to_string();
-        assert_ne!(before_sha, after_sha, "Fetch should update remote tracking ref");
+        assert_ne!(before_sha, after_sha, "Merge should advance HEAD");
+    }
+
+    #[test]
+    fn test_fetch_and_merge_skips_dirty_repo() {
+        let temp = assert_fs::TempDir::new().unwrap();
+        let bare = create_bare_repo(temp.path(), "test-dirty");
+
+        let clone_path = temp.path().join("dirty-repo");
+        git_clone(&bare, &clone_path);
+
+        // Create a local uncommitted change
+        std::fs::write(clone_path.join("dirty-file.txt"), "local work").unwrap();
+
+        let repo = RepoSyncInfo {
+            url: bare.display().to_string(),
+            name: "test-dirty".to_string(),
+            local_path: clone_path,
+            exists: true,
+        };
+        let result = fetch_and_merge_repo(&repo, &ProgressTracker::hidden());
+        assert!(result.is_ok(), "should succeed: {:?}", result);
+        assert_eq!(result.unwrap(), FetchResult::DirtySkipped);
+    }
+
+    #[test]
+    fn test_has_local_changes_clean_repo() {
+        let temp = assert_fs::TempDir::new().unwrap();
+        let bare = create_bare_repo(temp.path(), "clean-check");
+        let clone_path = temp.path().join("clean-repo");
+        git_clone(&bare, &clone_path);
+
+        let result = has_local_changes(&clone_path);
+        assert!(result.is_ok());
+        assert!(!result.unwrap(), "Clean repo should have no local changes");
+    }
+
+    #[test]
+    fn test_has_local_changes_dirty_repo() {
+        let temp = assert_fs::TempDir::new().unwrap();
+        let bare = create_bare_repo(temp.path(), "dirty-check");
+        let clone_path = temp.path().join("dirty-repo");
+        git_clone(&bare, &clone_path);
+
+        std::fs::write(clone_path.join("new-file.txt"), "content").unwrap();
+
+        let result = has_local_changes(&clone_path);
+        assert!(result.is_ok());
+        assert!(result.unwrap(), "Dirty repo should have local changes");
     }
 
     #[test]
@@ -879,7 +1012,38 @@ mod unit_tests {
         execute_sync(repos, &mut report, &mut progress);
 
         assert_eq!(report.repos_fetched, 1, "Should report 1 fetch");
+        assert_eq!(report.repos_merged, 1, "Should report 1 merge");
         assert_eq!(report.repos_cloned, 0, "Should report 0 clones");
+        assert!(report.repos_dirty.is_empty(), "Should have no dirty repos");
+        assert!(report.errors.is_empty(), "Should have no errors");
+    }
+
+    #[test]
+    fn test_execute_sync_dirty_repo_skips_merge() {
+        let temp = assert_fs::TempDir::new().unwrap();
+        let bare = create_bare_repo(temp.path(), "sync-dirty");
+
+        let clone_path = temp.path().join("sync-dirty-clone");
+        git_clone(&bare, &clone_path);
+
+        // Make the working tree dirty
+        std::fs::write(clone_path.join("uncommitted.txt"), "wip").unwrap();
+
+        let repos = vec![RepoSyncInfo {
+            url: bare.display().to_string(),
+            name: "sync-dirty".to_string(),
+            local_path: clone_path,
+            exists: true,
+        }];
+
+        let mut report = SyncReport::new();
+        let mut progress = ProgressTracker::hidden();
+
+        execute_sync(repos, &mut report, &mut progress);
+
+        assert_eq!(report.repos_fetched, 1, "Should report 1 fetch");
+        assert_eq!(report.repos_merged, 0, "Should report 0 merges");
+        assert_eq!(report.repos_dirty, vec!["sync-dirty".to_string()]);
         assert!(report.errors.is_empty(), "Should have no errors");
     }
 
@@ -1018,6 +1182,7 @@ mod unit_tests {
             total_repos: 3,
             repos_cloned: 1,
             repos_fetched: 2,
+            repos_merged: 2,
             ..Default::default()
         };
         let mut buf = Vec::new();
@@ -1027,7 +1192,28 @@ mod unit_tests {
         assert!(output.contains("Total repositories: 3"), "got: {}", output);
         assert!(output.contains("Cloned: 1"), "got: {}", output);
         assert!(output.contains("Fetched: 2"), "got: {}", output);
+        assert!(output.contains("Merged: 2"), "got: {}", output);
+        assert!(!output.contains("Skipped merge"), "no dirty repos expected, got: {}", output);
         assert!(!output.contains("Errors:"), "no errors expected, got: {}", output);
+    }
+
+    #[test]
+    fn test_write_sync_summary_with_dirty_repos() {
+        let report = SyncReport {
+            total_repos: 3,
+            repos_cloned: 0,
+            repos_fetched: 3,
+            repos_merged: 1,
+            repos_dirty: vec!["repo-a".to_string(), "repo-b".to_string()],
+            ..Default::default()
+        };
+        let mut buf = Vec::new();
+        write_sync_summary(&report, &mut buf);
+        let output = String::from_utf8(buf).unwrap();
+        assert!(output.contains("Merged: 1"), "got: {}", output);
+        assert!(output.contains("Skipped merge (2 with local changes):"), "got: {}", output);
+        assert!(output.contains("repo-a"), "got: {}", output);
+        assert!(output.contains("repo-b"), "got: {}", output);
     }
 
     #[test]
