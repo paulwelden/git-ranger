@@ -39,6 +39,13 @@ impl ProgressTracker {
         self.main_bar = Some(bar);
     }
 
+    /// Update the main progress bar message
+    pub fn update_message(&self, message: &str) {
+        if let Some(bar) = &self.main_bar {
+            bar.set_message(message.to_string());
+        }
+    }
+
     /// Increment the main progress bar by 1
     pub fn inc(&self) {
         if let Some(bar) = &self.main_bar {
@@ -202,6 +209,22 @@ mod tests {
         let spinner = tracker.create_spinner("Test");
         tracker.finish_spinner(spinner, "Done");
         // Should complete without error even though it's hidden
+    }
+
+    #[test]
+    fn test_update_message() {
+        let mut tracker = ProgressTracker::new();
+        tracker.init_main_bar(5, "Initial");
+        tracker.update_message("Cloning my-repo");
+        // Should not panic and message should be updated
+        assert!(tracker.main_bar.is_some());
+    }
+
+    #[test]
+    fn test_update_message_without_main_bar() {
+        let tracker = ProgressTracker::new();
+        // Should not panic when updating without a main bar
+        tracker.update_message("Some message");
     }
 
     #[test]

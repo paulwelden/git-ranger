@@ -239,6 +239,9 @@ fn execute_sync(repos: Vec<RepoSyncInfo>, report: &mut SyncReport, progress: &mu
     progress.init_main_bar(total_repos, "Syncing repositories");
 
     for repo in repos {
+        let operation = if repo.exists { "Fetching" } else { "Cloning" };
+        progress.update_message(&format!("{} {}", operation, repo.name));
+
         if repo.exists {
             match fetch_repo(&repo, progress) {
                 Ok(_) => {
