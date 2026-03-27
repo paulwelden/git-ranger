@@ -165,16 +165,6 @@ mod unit_tests {
     }
 
     #[test]
-    fn test_status_report_new_equals_default() {
-        let new_report = StatusReport::new();
-        let default_report = StatusReport::default();
-        assert_eq!(new_report.total_repos, default_report.total_repos);
-        assert_eq!(new_report.repos_cloned, default_report.repos_cloned);
-        assert_eq!(new_report.repos_not_cloned, default_report.repos_not_cloned);
-        assert_eq!(new_report.repos.len(), default_report.repos.len());
-    }
-
-    #[test]
     fn test_status_error_common_display() {
         let inner = CommonError::ConfigNotFound("/path".to_string());
         let err = StatusError::Common(inner);

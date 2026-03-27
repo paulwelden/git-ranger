@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::env;
 use std::fmt;
 
-/// A string value that can be resolved from an environment variable
+/// Wraps string values that may reference environment variables (e.g. `${GITLAB_TOKEN}`), keeping secrets out of config files.
 /// Supports syntax: ${ENV_VAR_NAME} or direct string values
 #[derive(Debug, Clone, PartialEq)]
 pub struct EnvString(String);

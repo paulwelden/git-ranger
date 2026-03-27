@@ -82,6 +82,48 @@ echo $GITLAB_TOKEN
 
 The `ranger.yaml` file is automatically ignored by git to prevent accidental commits.
 
+#### Obtaining Tokens
+
+**GitLab Personal Access Token:**
+1. Go to GitLab > Settings > Access Tokens
+2. Create a token with the `read_api` scope (and `read_repository` if needed for cloning)
+3. Copy the token (starts with `glpat-`) and set it as `GITLAB_TOKEN`
+
+**GitHub Personal Access Token:**
+1. Go to GitHub > Settings > Developer settings > Personal access tokens > Tokens (classic)
+2. Generate a token with the `repo` scope (and `read:org` for org/team access)
+3. Copy the token (starts with `ghp_`) and set it as `GITHUB_TOKEN`
+
+#### Troubleshooting
+
+**"Environment variable 'XXX' is not set":** Verify the variable is set (`echo $env:VAR` in PowerShell, `echo $VAR` in bash/zsh). Check spelling in both the config and environment, and restart your terminal after setting persistent variables.
+
+**Token not working:** Verify the token has correct scopes and has not expired. Test manually:
+```bash
+# GitLab
+curl -H "PRIVATE-TOKEN: $GITLAB_TOKEN" https://gitlab.example.com/api/v4/user
+
+# GitHub
+curl -H "Authorization: token $GITHUB_TOKEN" https://api.github.com/user
+```
+
+#### Multiple Environments
+
+You can use different tokens for separate contexts (e.g., work vs personal):
+
+```yaml
+providers:
+  gitlab:
+    host: "https://gitlab.company.com"
+    token: "${GITLAB_WORK_TOKEN}"
+
+repos:
+  - url: "git@gitlab.com:personal/my-project.git"
+    local_dir: "personal"
+```
+
+Set each variable independently in your shell profile. This lets one `ranger.yaml` span multiple accounts without exposing any credentials.
+
 ### Configuration Notes
 
 - **`local_dir`**: Optional path where repositories will be cloned. Can be specified per group or per repo.
@@ -128,82 +170,37 @@ sudo mv git-ranger /usr/local/bin/
 
 ### From Source (Requires Rust)
 
+**Prerequisites:** Rust toolchain (install from [rustup.rs](https://rustup.rs))
+
+**Recommended -- install via cargo (automatically adds to PATH):**
 ```bash
 cargo install --path .
 ```
 
-Or directly from the repository:
+Or directly from the repository without cloning:
 ```bash
 cargo install --git https://github.com/paulwelden/git-ranger
 ```
 
-**Windows:**
-
-```powershell
-# Download git-ranger.exe and add to PATH, or place in a directory already in PATH
-# Example: C:\Users\YourName\.local\bin\
-```
-
-### From Source
-
-**Prerequisites:**
-
-- Rust toolchain (install from [rustup.rs](https://rustup.rs))
-
-**Build and install:**
-
+**Alternative -- manual build:**
 ```bash
-# Clone the repository
-git clone https://github.com/paulwelden/git-ranger.git
-cd git-ranger
-
-# Build and install directly to cargo bin directory (recommended)
-# This automatically adds the binary to your PATH
-cargo install --path .
-```
-
-**Or build manually:**
-
-```bash
-# Build optimized release binary
 cargo build --release
-
-# Clean previous builds first (optional)
-cargo clean && cargo build --release
-
-# Binary location:
-# - Windows: target\release\git-ranger.exe
-# - Linux/macOS: target/release/git-ranger
+# Binary location: target/release/git-ranger (or target\release\git-ranger.exe on Windows)
 ```
 
-**Adding to PATH (if building manually):**
+If building manually, add the binary to your PATH:
 
-**Windows:**
+**Windows (PowerShell):**
 ```powershell
-# Option 1: Copy to user bin directory
 New-Item -ItemType Directory -Force -Path "$env:USERPROFILE\.local\bin"
 Copy-Item target\release\git-ranger.exe "$env:USERPROFILE\.local\bin\"
-# Then add %USERPROFILE%\.local\bin to your PATH via System Environment Variables
-
-# Option 2: Add build directory to PATH (current session only)
-$env:PATH += ";$PWD\target\release"
-
-# Option 3: Use cargo install (simplest - automatically handles PATH)
-cargo install --path .
+# Add %USERPROFILE%\.local\bin to your PATH via System Environment Variables
 ```
 
 **Linux/macOS:**
 ```bash
-# Option 1: Copy to system bin directory
 sudo cp target/release/git-ranger /usr/local/bin/
-
-# Option 2: Copy to user bin directory
-mkdir -p ~/.local/bin
-cp target/release/git-ranger ~/.local/bin/
-# Ensure ~/.local/bin is in PATH (add to ~/.bashrc or ~/.zshrc if needed)
-
-# Option 3: Use cargo install (simplest - automatically handles PATH)
-cargo install --path .
+# Or copy to ~/.local/bin and ensure it is in your PATH
 ```
 
 ### Verify Installation

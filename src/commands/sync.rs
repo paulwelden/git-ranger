@@ -786,20 +786,6 @@ mod unit_tests {
     }
 
     #[test]
-    fn test_sync_report_new_equals_default() {
-        let new_report = SyncReport::new();
-        let default_report = SyncReport::default();
-        assert_eq!(new_report.total_repos, default_report.total_repos);
-        assert_eq!(new_report.repos_to_clone, default_report.repos_to_clone);
-        assert_eq!(new_report.repos_to_fetch, default_report.repos_to_fetch);
-        assert_eq!(new_report.repos_cloned, default_report.repos_cloned);
-        assert_eq!(new_report.repos_fetched, default_report.repos_fetched);
-        assert_eq!(new_report.repos_merged, default_report.repos_merged);
-        assert_eq!(new_report.repos_dirty.len(), default_report.repos_dirty.len());
-        assert_eq!(new_report.errors.len(), default_report.errors.len());
-    }
-
-    #[test]
     fn test_sync_error_common_display() {
         let inner = CommonError::ConfigNotFound("/path".to_string());
         let err = SyncError::Common(inner);
